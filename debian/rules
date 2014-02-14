@@ -1,0 +1,9 @@
+#!/usr/bin/make -f
+# vim:noet:
+
+%:
+	dh  ${@}
+
+override_dh_installinit:
+	dh_installinit --update-rcd-params='defaults 21'
+

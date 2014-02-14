@@ -1,0 +1,13 @@
+openerp-web (6.1-4) stable; urgency=low
+
+  * Move addons to openerp/addons
+  * Added new install 
+  * Move to pyshared 
+
+ -- Jaroslav Shumliansky (ENAPPS) <jaroslav@enapps.co.uk>  Tue, 25 Jun 2013 10:36:48 +0100
+
+openerp-web (6.1-2) stable; urgency=low
+
+  * New major version, new packaging.
+
+ -- Jaroslav Shumliansky (ENAPPS) <jaroslav@enapps.co.uk>  Tue, 18 Jun 2013 11:41:00 +0300

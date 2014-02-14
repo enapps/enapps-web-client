@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html style="height: 100%">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width">
+    <title>OpenERP Web Mobile</title>
+
+    <link rel="stylesheet"  href="/web_mobile/static/lib/jquery.mobile-1.3.2/jquery.mobile-1.3.2.css"/>
+    <link rel="stylesheet" href="/web_mobile/static/src/css/web_mobile.css"/>
+
+    <script type="text/javascript" src="/web/static/lib/jquery_2/jquery-2.0.2.js"></script>
+    <script type="text/javascript" src="/web/static/lib/jquery-ui-1.10.3/ui/jquery-ui.js"></script>
+    <script type="text/javascript" src="/web/static/lib/jquery.ba-bbq/jquery.ba-bbq.js"></script>
+    <script type="text/javascript" src="/web/static/lib/underscore/underscore.js"></script>
+    <script type="text/javascript" src="/web/static/lib/underscore/underscore.string.js"></script>
+    <script type="text/javascript" src="/web/static/lib/py.parse/lib/py.js"></script>
+    <script type="text/javascript" src="/web_mobile/static/lib/jquery.mobile-1.3.2/jquery.mobile-1.3.2.js"></script>
+
+    <script type="text/javascript" src="/web/static/lib/datejs/globalization/en-US.js"></script>
+    <script type="text/javascript" src="/web/static/lib/datejs/core.js"></script>
+    <script type="text/javascript" src="/web/static/lib/datejs/extras.js"></script>
+    <script type="text/javascript" src="/web/static/lib/datejs/parser.js"></script>
+    <script type="text/javascript" src="/web/static/lib/datejs/sugarpak.js"></script>
+    <script type="text/javascript" src="/web/static/lib/datejs/time.js"></script>
+    <!-- // <script type="text/javascript" src="/web/static/lib/jquery.ui.timepicker/js/jquery-ui-timepicker-addon.js"></script> -->
+
+    <script type="text/javascript" src="/web/static/lib/qweb/qweb2.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/boot.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/core.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/dates.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/formats.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/chrome.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/views.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/data.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/data_export.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/data_import.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/search.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/view_form.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/view_page.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/view_list.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/view_list_editable.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/view_tree.js"></script>
+    <script type="text/javascript" src="/web/static/src/js/view_editor.js"></script>
+
+    <script type="text/javascript" src="/web_mobile/static/src/js/web_mobile.js"></script>
+    <script type="text/javascript" src="/web_mobile/static/src/js/chrome_mobile.js"></script>
+    <script type="text/javascript" src="/web_mobile/static/src/js/list_mobile.js"></script>
+    <script type="text/javascript" src="/web_mobile/static/src/js/form_mobile.js"></script>
+
+    <script type="text/javascript">
+        var QWeb;
+        $.mobile.autoInitializePage = false;
+        $(function() {
+            if (window.location.pathname != "/web_mobile/static/src/web_mobile.html") {
+                window.location.replace('/mobile');
+            }
+            var oe = openerp.init();
+            openerp.web_mobile(oe);
+            oe.web_mobile.mobilewebclient("moe");
+        });
+    </script>
+</head>
+<body>
+    <div id="moe" class="openerp"></div>
+</body>
+</html>

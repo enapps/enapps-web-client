@@ -1,0 +1,8 @@
+addons/web/static/build/*
+.sass-cache
+node_modules
+*.pyc
+addons/web/compressed_files.txt
+addons/web/min_js.js
+pre_js.js
+addons/web/web_beauty.js

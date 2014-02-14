@@ -1,0 +1,194 @@
+/******************************************************************
+
+ENAPPS Stylesheet: Tablet & Small Desktop Stylesheet
+
+Here's where you can start getting into the good stuff.
+This size will work on iPads, other tablets, and desktops.
+So you can start working with more styles, background images,
+and other resources.
+
+******************************************************************/
+
+.openerp {
+    font-size: 13px;
+   a.oe_topbar_name, .menu a {
+        line-height: 20px;
+        padding-righ: 0px;
+        margin-right: 0px;
+   }
+   .oe-application-container {
+        padding-left: 0px;
+        #oe_app {
+            float: left;
+            padding: 0;
+            > .ui-widget-content {
+                padding-right: 0px;
+                padding-left: 0px;
+                padding-top: 0px;
+            }
+        }
+    }
+    .oe_topbar {
+
+        .oe_dropdown_menu {
+            top: 36px;
+        }
+
+        .oe_topbar_avatar {
+            display:inline;
+        }
+    }
+    .view-manager-main-table {
+        .view-manager-main-sidebar {
+            a.logo {
+                display: initial;
+                img {
+                    background: #F0EEEE;
+                }
+            }
+        }
+    }
+    .oe-view-manager-header {
+        button {
+            width: 35px;
+            height: 30px;
+            line-height: 15px;
+        }
+    }
+    .oe_menu {
+        float: left;
+        padding: 0;
+        margin: 0;
+        font-size: 13px;
+        > div {
+            list-style-type: none;
+            @include resetmp();
+            float: left;
+            display: block;
+            color: #eeeeee;
+            > a {
+                display: block;
+                padding: 5px 10px 7px;
+                line-height: 20px;
+                height: 20px;
+                text-decoration: none;
+                color: #eee;
+                vertical-align: top;
+                text-shadow: 0 1px 1px rgba(0,0,0,0.2);
+                @include transition(all 0.2s ease-out);
+                &:hover {
+                    background: rgba(0,0,0,0.2);
+                    text-shadow: black 0px 0px 3px;
+                    color: white;
+                    @include box-shadow(0 1px 2px rgba(0,0,0,0.4) inset);
+                }
+            }
+            > .oe_active {
+                background: rgba(0,0,0,0.30);
+                text-shadow: black 0px 0px 3px;
+                @include box-shadow(0 1px 2px rgba(0,0,0,0.4) inset);
+            }
+        }
+    }
+    .secondary_menu.oe_folded, .secondary_menu.oe_unfolded, {
+        width: 0px;
+        display: block;
+        .oe_secondary_menu.active {
+            position: absolute;
+            z-index: 100;
+            height: initial;
+            padding: 6px;
+            color: white;
+            .oe_secondary_submenu {
+                display: none;
+                a.oe_secondary_menu_item {
+                    white-space: nowrap;
+                    color: white;
+                    :hover {
+                        text-shadow: 0 1px 0 #333;
+                        color: black;
+                        background: #d2d2ff;
+                        border-radius: 5px;
+                    }
+                }
+            }
+        }
+    }
+    .oe-record-delete button, .oe-record-edit-link button[name="delete"] {
+        border: none;
+        height: 16px;
+        width: 16px;
+        cursor: pointer;
+    }
+    .oe-record-edit-link, .oe-record-delete {
+        button:hover {
+            color: #7C7BAD;
+        }
+    }
+    .secondary_menu {
+        position: static;
+        width: 220px;
+        height: 100%;
+        color: #7c7bad;
+        border: 0px;
+    }
+
+    .oe_secondary_menu {
+        .oe_secondary_menu_item {
+            color: #7c7bad;
+            width: 100%;
+            line-height: 20px;
+            display: block;
+        }
+        a.submenu {
+            > span.icon-chevron-right {
+                font-size: 10px;
+            }
+            &.opened {
+                > span.icon-chevron-right {
+                    display: none;
+                }
+                > span.icon-chevron-down {
+                    display: initial!important;
+                    font-size: 10px;
+                }
+            }
+        }
+        .oe_secondary_submenu_item {
+            text-shadow: none;
+        }
+    }
+}
+
+
+.oe_topbar {
+
+    height: 36px;
+
+    .menu {
+        .logout {
+            display: none;
+        }
+        #mobile-menu {
+            display:none;
+        }
+
+        .menu-flexible {
+            display:block;
+            position: inherit;
+            width: auto;
+            li {
+                width: auto;
+                float:left;
+                font-weight: normal;
+                font-size: 1em;
+                a {
+                    line-height: 20px;
+                }
+
+            }
+
+        }
+    }
+}
+

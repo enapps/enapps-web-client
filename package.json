@@ -1,0 +1,10 @@
+{
+  "name": "ea-web-client",
+  "version": "0.1.0",
+  "devDependencies": {
+    "grunt": "~0.4.1",
+    "grunt-contrib-less": "~0.5.2",
+    "grunt-contrib-sass": "~0.4.1",
+    "grunt-contrib-copy": "~0.4.1"
+  }
+}
