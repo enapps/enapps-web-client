@@ -1,6 +1,9 @@
 ####Openerp server polished and enhancement by [**Enapps**](http://enapps.co.uk) with multi tabbed web client. In addition with [Enapps web client](https://github.com/enapps/enapps-web-client) brings ERP system to the next level.
 Enapps openerp server could be found [here](https://github.com/enapps/enapps-openerp-server).
 
+*Click the image to see it in action:*
+
+[![Enapps server/ web client public release](http://img.youtube.com/vi/7aJPrmKQMcM/0.jpg)](http://www.youtube.com/watch?v=7aJPrmKQMcM&feature=youtu.be)
 
 ###Installation (*from scratch*) on machine running UBUNTU OS
 ***
