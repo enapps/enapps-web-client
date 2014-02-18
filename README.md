@@ -71,4 +71,19 @@ Enapps openerp server could be found [here](https://github.com/enapps/enapps-ope
 
 9. Finally start the server:
         $ sudo /etc/init.d/openerp-server start
-        
+
+----
+To access admin panel go to [http://yourupaddress:8069/admin](http://youripaddress:8069/admin) and log in using you supersuer credentials (password you enter for DB backup etc). Following items can be found after accessing admin panel:
+
+- *__Create__* - create new DB;
+- *__Drop__* - drop selected DB;
+-  *__Backup__* - backupd selected DB;
+-  *__Clone__* - make exact copy of selected DB and assigh it given name;
+-  *__Restore__* - restore selected DB;
+-  *__Migrate__* - update all the modules of selected DB (Similar to running the server with --update=all flag)
+
+
+While restoring/cloning database there are few additional options:
+* *__Replace all emails:__* -- if checked will replace all emails in new DB to one enterd further;
+*  *__Replace all passwords__* -- if checked will change all users passwords to one enterd further;
+*  *__Disable all crons__* -- if checked will disable all schedulers.
