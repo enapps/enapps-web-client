@@ -330,7 +330,7 @@ session.web.ActionManager = session.web.OldWidget.extend({
     },
     ir_actions_report_xml: function(action, on_closed) {
         var self = this;
-        // $.blockUI();
+        self.inner_viewmanager.views[self.inner_viewmanager.active_view].controller.reload();
         self.rpc("/web/session/eval_domain_and_context", {
             contexts: [action.context],
             domains: []

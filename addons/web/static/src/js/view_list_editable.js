@@ -430,10 +430,10 @@ openerp.web.list_editable = function (openerp) {
             var self = this,
                 new_seq,
                 ind_to_replace = (target_row_index-1)<0?0:target_row_index;
-            if (ind_to_replace-1<0) {
+            if (this.records.at(target_row_index).attributes.sequence<=1) {
                 new_seq = 0;
             } else {
-                new_seq = self.records.at(ind_to_replace-1).attributes.sequence+1;
+                new_seq = self.records.get(self.$current.find('tr[data-id]:nth(' + ind_to_replace + ')').data('id')).attributes.sequence;
             }
             var rec = self.records.get(saved_id);
             if (typeof(rec)!=='undefined') {

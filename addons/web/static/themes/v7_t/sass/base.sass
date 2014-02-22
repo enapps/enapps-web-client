@@ -4129,30 +4129,46 @@ div.ui-widget-overlay
         ul
             padding-left: 0
             margin: 2px 0 0 0
-        li
-            padding: 3px 0 0 20px
-            min-height: 19px
-            font-size: 13px
-            list-style: none
-            white-space: normal
-            overflow: hidden
-            display: inline-block
-            text-overflow: ellipsis
-            width: 160px
-            &:hover
-                border-top: 1px solid #D3D3D3
-                border-bottom: 1px solid #DEDEDE
-                -moz-box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 -1px 3px rgba(40, 40, 40, 0.2)
-                -webkit-box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 -1px 3px rgba(40, 40, 40, 0.2)
-                box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 -1px 3px rgba(40, 40, 40, 0.2)
-                background: #7C7BAD
-                margin-top: -1px
-                margin-bottom: -1px
+            &.oe-sidebar-attachments-items
+                li
+                    padding-left: 0px
+                    width: 180px
+                    a
+                        display: block
+                        &.oe-sidebar-attachments-link
+                            display: block
+                            width: 155px
+                            float: left
+                            word-break: break-all
+                            max-height: 3em
+                            padding: 0 3px
+            li
+                padding: 3px 0 0 20px
+                min-height: 19px
+                font-size: 13px
+                list-style: none
+                white-space: normal
+                overflow: hidden
+                display: inline-block
+                text-overflow: ellipsis
+                width: 160px
+                &:hover
+                    border-top: 1px solid #D3D3D3
+                    border-bottom: 1px solid #DEDEDE
+                    -moz-box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 -1px 3px rgba(40, 40, 40, 0.2)
+                    -webkit-box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 -1px 3px rgba(40, 40, 40, 0.2)
+                    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 -1px 3px rgba(40, 40, 40, 0.2)
+                    background: #7C7BAD
+                    margin-top: -1px
+                    margin-bottom: -1px
+                    a
+                        color: #fff
+                        text-shadow: rgba(0, 0, 0, 0.2) 0px 1px 1px
                 a
-                    color: #fff
-                    text-shadow: rgba(0, 0, 0, 0.2) 0px 1px 1px
-            a
-                color: black
+                    color: black
+                    display: inherit
+                    width: inherit
+
 
 .ui-corner-all
     @include radius(0px)
