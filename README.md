@@ -1,5 +1,4 @@
-####Openerp server polished and enhancement by [**Enapps**](http://enapps.co.uk) with multi tabbed web client. In addition with [Enapps web client](https://github.com/enapps/enapps-web-client) brings ERP system to the next level.
-Enapps openerp server could be found [here](https://github.com/enapps/enapps-openerp-server).
+####Openerp web client by [**Enapps**](http://enapps.co.uk) with multi tabs. Together with [Enapps server ](https://github.com/enapps/enapps-openerp-server) brings the OpenERP system to the next level.
 
 *Click the image to see it in action:*
 
@@ -41,7 +40,10 @@ Enapps openerp server could be found [here](https://github.com/enapps/enapps-ope
         python-ldap python-libxslt1 python-lxml python-mako python-openid python-psycopg2 \
         python-pybabel python-pychart python-pydot python-pyparsing python-reportlab \
         python-simplejson python-tz python-vatnumber python-vobject python-webdav \
-        python-werkzeug python-xlwt python-yaml python-zsi
+        python-werkzeug python-xlwt python-yaml python-zsi python-pip
+        
+        $sudo pip install Werkzeug # this is for 9.4 version or sudo pip install --upgrade Werkzeug if already installed.
+        $sudo pip install GitPython # or sudo pip install --upgrade GitPython if already installed an old version - this is for git info in modules
 6. Install [git](http://git-scm.com/):
     - `sudo apt-get install git`
 7. Clone the server:
@@ -77,4 +79,3 @@ While restoring/cloning database there are few additional options:
 * *__Replace all emails:__* -- if checked will replace all emails in new DB to one enterd further;
 *  *__Replace all passwords__* -- if checked will change all users passwords to one enterd further;
 *  *__Disable all crons__* -- if checked will disable all schedulers.
-
