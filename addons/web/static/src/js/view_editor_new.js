@@ -1,4 +1,4 @@
-openerp.web_view_editor = function(instance) {
+openerp.web_view_editor = {};
 var _t = instance.web._t;
 var QWeb = instance.web.qweb;
 instance.web.ViewManagerAction.include({
@@ -21,7 +21,6 @@ instance.web.ViewManagerAction.include({
 });
 instance.web_view_editor.ViewEditor =   instance.web.Widget.extend({
     init: function(parent, element_id, dataset, view, options) {
-    	console.log('EDITOR ININT');
         this._super(parent);
         this.parent = parent;
         this.dataset = new instance.web.DataSetSearch(this, 'ir.ui.view', null, null),
@@ -1224,4 +1223,3 @@ instance.web_view_editor.ViewEditor.property_widget = new instance.web.Registry(
     'char' : 'instance.web_view_editor.ViewEditor.FieldChar',
     'float' : 'instance.web_view_editor.ViewEditor.FieldFloat'
 });
-};

@@ -10,10 +10,14 @@
     "js": [
         'static/lib/dhtmlxScheduler/codebase/dhtmlxscheduler_debug.js',
         'static/lib/dhtmlxScheduler/sources/ext/ext_minical.js',
+        'static/lib/fullcalendar/js/fullcalendar.js',
         'static/src/js/calendar.js'
+
     ],
     "css": [
             'static/lib/dhtmlxScheduler/codebase/ext/dhtmlxscheduler_ext.css',
+            'static/lib/fullcalendar/css/fullcalendar.css',
+            'static/src/css/web_fullcalendar.css',
             'static/src/css/web_calendar.css'
             ],
     'qweb' : [

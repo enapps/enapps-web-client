@@ -2,21 +2,21 @@
  * OpenERP web library
  *---------------------------------------------------------*/
 
-openerp.web.views = function(session) {
-var QWeb = session.web.qweb,
-    _t = session.web._t;
+openerp.web.views = {};
+var QWeb = openerp.web.qweb,
+    _t = openerp.web._t;
 
 /**
  * Registry for all the client actions key: tag value: widget
  */
-session.web.client_actions = new session.web.Registry();
+openerp.web.client_actions = new openerp.web.Registry();
 
 /**
  * Registry for all the main views
  */
-session.web.views = new session.web.Registry();
+openerp.web.views = new openerp.web.Registry();
 
-session.web.ActionManager = session.web.OldWidget.extend({
+openerp.web.ActionManager = openerp.web.OldWidget.extend({
     init: function(parent) {
         this._super(parent);
         this.inner_action = null;
@@ -24,6 +24,7 @@ session.web.ActionManager = session.web.OldWidget.extend({
         this.dialog = null;
         this.dialog_viewmanager = null;
         this.client_widget = null;
+        openerp.webclient.widget_children = [];
     },
     render: function() {
         return '<div id="' + this.element_id + '" style="height: 100%;"></div>';
@@ -38,13 +39,22 @@ session.web.ActionManager = session.web.OldWidget.extend({
     },
     content_stop: function () {
         if (this.inner_viewmanager) {
+            _.each(this.inner_viewmanager.views, function(v) {
+                if (!!v.controller && !!v.controller.$element) {
+                    v.controller.stop();
+                }
+            })
+            this.inner_viewmanager.views = null;
             this.inner_viewmanager.stop();
             this.inner_viewmanager = null;
         }
+        this.inner_action = null;
         if (this.client_widget) {
             this.client_widget.stop();
             this.client_widget = null;
         }
+        openerp.webclient.widget_children = [];
+        openerp.webclient.action_manager.widget_children = _.without(openerp.webclient.action_manager.widget_children, this.inner_viewmanager);
     },
     do_push_state: function(state) {
         if (this.widget_parent && this.widget_parent.do_push_state) {
@@ -62,6 +72,7 @@ session.web.ActionManager = session.web.OldWidget.extend({
         var self = this,
             action_loaded;
         if (state.action_id) {
+            self.action_id = state.action_id
             var run_action = (!this.inner_viewmanager) || this.inner_viewmanager.action.id !== state.action_id;
             if (run_action) {
                 this.null_action();
@@ -78,7 +89,7 @@ session.web.ActionManager = session.web.OldWidget.extend({
             };
             action_loaded = this.do_action(action);
         } else if (state.sa) {
-            // load session action
+            // load openerp action
             var self = this;
             this.null_action();
             action_loaded = this.rpc('/web/session/get_session_action',  {key: state.sa}).then(function(action) {
@@ -111,7 +122,7 @@ session.web.ActionManager = session.web.OldWidget.extend({
     },
     set_tab_url: function(tab,path) {
         var cur_tab;
-            cur_tab = _.find(this.widget_parent.action_manager.widget_children, function(el) {return el.tab_id===tab;});
+        cur_tab = _.find(this.widget_parent.action_manager.widget_children, function(el) {return el.tab_id===tab;});
         if (typeof(cur_tab)!=='undefined') {
             cur_tab.tab_url = path;
             window.history.pushState({"html":"","pageTitle":""},"", path);
@@ -121,6 +132,7 @@ session.web.ActionManager = session.web.OldWidget.extend({
         if (_.isNumber(action)) {
             var self = this;
             return self.rpc("/web/action/load", { action_id: action }, function(result) {
+                if (result.result.tag == "default_home") return;
                 self.do_action(result.result, on_close);
             });
         } else if (action.action_id && _.isString(action.action_id) && action.model && _.isString(action.model)) {
@@ -160,26 +172,28 @@ session.web.ActionManager = session.web.OldWidget.extend({
                 .contains(action.res_model)) {
             var old_close = on_close;
             on_close = function () {
-                session.webclient.do_reload().then(old_close);
+                // RE-CHECK THIS
+                openerp.webclient.do_reload().then(old_close);
             };
         }
         if (action.target === 'new') {
-            this.dialog = new session.web.Dialog(this, { width: '80%' });
+            this.dialog = new openerp.web.Dialog(this, { width: '80%' });
             if(on_close)
                 this.dialog.on_close.add(on_close);
             this.dialog.dialog_title = action.name;
-            this.dialog_viewmanager = new session.web.ViewManagerAction(this, action);
+            this.dialog_viewmanager = new openerp.web.ViewManagerAction(this, action);
             this.dialog_viewmanager.appendTo(this.dialog.$element);
             this.dialog.open();
         } else  {
             if(action.menu_id) {
                 return this.widget_parent.do_action(action, function () {
-                    session.webclient.menu.open_menu(action.menu_id);
+                    // RE-CHECK THIS
+                    openerp.webclient.menu.open_menu(action.menu_id);
                 });
             }
             this.dialog_stop();
             this.inner_action = action;
-            this.inner_viewmanager = new session.web.ViewManagerAction(this, action);
+            this.inner_viewmanager = new openerp.web.ViewManagerAction(this, action);
             if (action.flags.without_tab) {
                 this.inner_viewmanager.appendTo(this.$element);
             } else {
@@ -188,10 +202,10 @@ session.web.ActionManager = session.web.OldWidget.extend({
                 this._rename_tab_id();
                 this._activate_tab();
                 this.inner_viewmanager;
-                setTimeout(function(){
+                // setTimeout(function(){
                     var result = self.get_tab_url();
                     self.set_tab_url.apply(self,result);
-                },600);
+                // },600);
             }
         }
     },
@@ -209,52 +223,50 @@ session.web.ActionManager = session.web.OldWidget.extend({
         this.element_id = _.uniqueId('tab-'); // TODO This method fix bug (or maybe feature :D ) -- all widgets have the same id -- "#widget-15"
         $('#' + this.element_id).addClass("ui-tabs-panel ui-widget-content ui-corner-bottom");
     },
+    get_inner_vm: function(id) {
+        var self = this;
+        return self.widget_children.filter(function(el){
+            return el.tab_id == id;
+        })[0];
+    },
+    close_tab: function(event) {
+        event.stopImmediatePropagation();
+        var self = this,
+            panelId = $(event.currentTarget).closest( "li" ).attr('aria-controls'),
+            _inner_vm = self.get_inner_vm(panelId),
+            _index_inner_vm = self.widget_children.indexOf(_inner_vm),
+            ui = {'panel':$('#'+panelId),'href':"#"+panelId};
+        if (self.check_unsaved(event,ui)) {
+            if (_inner_vm == self.inner_viewmanager) {
+                self.content_stop();
+            }
+            $(event.currentTarget).closest( "li" ).remove();
+            $("#" + panelId)[0].remove();
+            $('#oe_app').tabs("refresh");
+        }
+    },
     _activate_tab: function () {
         var self = this;
-        var activate_last_tab = (function(){
-                var tab_to_activate = tabs.find( "ul[id='tab_navigator'].ui-tabs-nav li.ui-state-active a:not(:has( > .ui-icon-circle-close))" );
-                tab_to_activate.click();
-        });
-        var tabs = $('#oe_app').tabs();
-        tabs.tabs('refresh');
+        this.$tab_pannel = $('#oe_app').tabs({
+                activate: function(event,ui) {
+                    var _inner_vm = self.get_inner_vm(ui.newTab.context.getAttribute('href').slice(1));
+                    self.inner_viewmanager = _inner_vm;
+                    self.set_tab_url(_inner_vm.tab_id,_inner_vm.tab_url);
+                    document.title = ui.newTab.context.textContent.trim();
+                    self.inner_action = self.inner_viewmanager.action;
+                }
+            });
+        this.$tab_pannel.tabs('refresh');
         var tabs_count = $('#oe_app').find('#tab_navigator li').length;
         $('#oe_app').tabs('option','active',tabs_count-1);
         var urlPath;
-        tabs.delegate( "span.ui-icon-circle-close", "click", function(event) {
-            event.stopImmediatePropagation();
-            var panelId = $(this).closest( "li" ).attr('aria-controls');
-            var ui = {'panel':$('#'+panelId),'href':"#"+panelId};
-            if (self.check_unsaved(event,ui)) {
-                $(this).closest( "li" ).remove();
-                $( "#" + panelId ).remove();
-                tabs.tabs('refresh');
-            }
+        this.$tab_pannel.delegate( "span.ui-icon-circle-close", "click", function(event) {
+            self.close_tab(event);
         });
-        tabs.find( ".ui-tabs-nav" ).sortable({
+        this.$tab_pannel.find( ".ui-tabs-nav" ).sortable({
                 axis: "x",
             });
-        tabs.find( "ul[id='tab_navigator'].ui-tabs-nav li a:not(:has( > .ui-icon-circle-close))" ).click(function(event,ui){
-            var $tab =this,
-                cur_tab = _.find(self.widget_children, function(el) {
-                    return el.tab_id==$tab.getAttribute('href').slice(1);
-                }),
-                tabId = $tab.getAttribute('href').slice(1);
-            self.set_tab_url(tabId,cur_tab.tab_url);
-            document.title = (this.innerText && this.innerText.trim() || this.innerHTML.trim());
-            var _action_manager = cur_tab.action;
-            self.widget_parent.action_manager.inner_viewmanager = cur_tab;
-            self.widget_parent.action_manager.inner_action = _action_manager;
-            if (!!cur_tab.views.calendar && cur_tab.views.calendar.controller!=null) {
-                _calendar = self.widget_parent.action_manager.inner_viewmanager.views.calendar.controller;
-                _calendar.options.sidebar.dont_reload_flag = true;
-                _calendar.init_scheduler();
-                _calendar.do_ranged_search();
-            }
-            this.focus();
-            this.blur();
-            return
-        });
-        var tabId = tabs.find('ul[id="tab_navigator"] li.ui-state-active a').attr('href').slice(1);
+        var tabId = this.$tab_pannel.find('ul[id="tab_navigator"] li.ui-state-active a').prop('href').slice(1);
         self.set_tab_url(tabId, document.location.hash);
     },
     check_unsaved: function(event, ui) {
@@ -325,12 +337,12 @@ session.web.ActionManager = session.web.OldWidget.extend({
     ir_actions_client: function (action) {
         this.content_stop();
         this.dialog_stop();
-        var ClientWidget = session.web.client_actions.get_object(action.tag);
+        var ClientWidget = openerp.web.client_actions.get_object(action.tag);
         (this.client_widget = new ClientWidget(this, action.params)).appendTo(this);
     },
     ir_actions_report_xml: function(action, on_closed) {
         var self = this;
-        self.inner_viewmanager.views[self.inner_viewmanager.active_view].controller.reload();
+        !!self.inner_viewmanager && self.inner_viewmanager.views[self.inner_viewmanager.active_view].controller.reload();
         self.rpc("/web/session/eval_domain_and_context", {
             contexts: [action.context],
             domains: []
@@ -338,12 +350,9 @@ session.web.ActionManager = session.web.OldWidget.extend({
             action = _.clone(action);
             action.context = res.context;
             action.do_open = 1;
-            if (action.report_type!=="webkit") {
-                var token = new Date().getTime(),
-                    url = '/web/report'+'?action=' + encodeURIComponent(JSON.stringify(action)) + '&token=' + token +'&session_id='+self.session.session_id;
-                window.open(url);
-            } else {
-                self.session.get_file({
+            var _session_id = openerp.webclient.session.session_id;
+            if (action.report_type=="webkit") {
+                openerp.get_file({
                     url: '/web/report',
                     data: {action: JSON.stringify(action)},
                     complete: $.unblockUI,
@@ -353,7 +362,17 @@ session.web.ActionManager = session.web.OldWidget.extend({
                         }
                         self.dialog_stop();
                     },
-                    error: session.webclient.crashmanager.on_rpc_error
+                    error: openerp.webclient.crashmanager.on_rpc_error
+                })
+            } else if (!action.direct_print || action.direct_print == 'print_and_show'){
+                var token = new Date().getTime(),
+                    url = '/web/report'+'?action=' + encodeURIComponent(JSON.stringify(action)) + '&token=' + token +'&session_id='+_session_id;
+                window.open(url);
+            } else if (action.direct_print == 'print') {
+                self.rpc('/web/report/direct_print', {
+                    action: action
+                }).then(function(printing_result) {
+                    self.do_notify("Printing", printing_result.message);
                 })
             }
         });
@@ -366,11 +385,11 @@ session.web.ActionManager = session.web.OldWidget.extend({
     }
 });
 
-session.web.ViewManager =  session.web.OldWidget.extend(/** @lends session.web.ViewManager# */{
+openerp.web.ViewManager =  openerp.web.OldWidget.extend(/** @lends openerp.web.ViewManager# */{
     template: "ViewManager",
     /**
-     * @constructs session.web.ViewManager
-     * @extends session.web.OldWidget
+     * @constructs openerp.web.ViewManager
+     * @extends openerp.web.OldWidget
      *
      * @param parent
      * @param dataset
@@ -384,7 +403,7 @@ session.web.ViewManager =  session.web.OldWidget.extend(/** @lends session.web.V
         this.active_view = null;
         this.views_src = _.map(views, function(x) {
             if (x instanceof Array) {
-                var View = session.web.views.get_object(x[1], true);
+                var View = openerp.web.views.get_object(x[1], true);
                 return {
                     view_id: x[0],
                     view_type: x[1],
@@ -396,11 +415,11 @@ session.web.ViewManager =  session.web.OldWidget.extend(/** @lends session.web.V
         });
         this.views = {};
         this.flags = flags || {};
-        this.registry = session.web.views;
+        this.registry = openerp.web.views;
         this.views_history = [];
     },
     render: function() {
-        return session.web.qweb.render(this.template, {
+        return openerp.web.qweb.render(this.template, {
             self: this,
             prefix: this.element_id,
             views: this.views_src});
@@ -411,7 +430,7 @@ session.web.ViewManager =  session.web.OldWidget.extend(/** @lends session.web.V
     start: function() {
         this._super();
         var self = this;
-        this.$element.find('.oe_vm_switch button').click(function() {
+        this.$element.delegate('.oe_vm_switch button', 'click', function() {
             self.on_mode_switch($(this).data('view-type'));
         });
         this.$element.find('.oe_vm_switch_reload').click(function() {
@@ -438,7 +457,7 @@ session.web.ViewManager =  session.web.OldWidget.extend(/** @lends session.web.V
         return this.on_mode_switch(default_view);
     },
     on_mode_reload: function() {
-        this.$element.find('.oe_vm_switch button:disabled').first().trigger('click');
+        this.on_mode_switch(this.active_view);
     },
     /**
      * Asks the view manager to switch visualization mode.
@@ -452,7 +471,7 @@ session.web.ViewManager =  session.web.OldWidget.extend(/** @lends session.web.V
             view = this.views[view_type],
             view_promise;
         var _view = self.views[view_type],
-            is_view_form = view_type && view_type=='form' && !!_view.controller;
+            is_view_form = view_type && view_type=='form' && !!_view && !!_view.controller;
         if (view_type && !this.check_unsaved()) {
             try {
                 if (is_view_form) {
@@ -471,7 +490,7 @@ session.web.ViewManager =  session.web.OldWidget.extend(/** @lends session.web.V
             this.views_history.push(view_type);
         }
         this.active_view = view_type;
-        self.session.window_pos = 0;
+        openerp.window_pos = 0;
         if (!view.controller) {
             // Lazy loading of views
             var controllerclass = this.registry.get_object(view_type);
@@ -583,7 +602,7 @@ session.web.ViewManager =  session.web.OldWidget.extend(/** @lends session.web.V
         if (this.searchview) {
             this.searchview.stop();
         }
-        this.searchview = new session.web.SearchView(
+        this.searchview = new openerp.web.SearchView(
                 this, this.dataset,
                 view_id, search_defaults, this.flags.search_view === false);
         this.searchview.on_search.add(this.do_searchview_search);
@@ -656,13 +675,13 @@ session.web.ViewManager =  session.web.OldWidget.extend(/** @lends session.web.V
     }
 });
 
-session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepnerp.web.ViewManagerAction# */{
+openerp.web.ViewManagerAction = openerp.web.ViewManager.extend(/** @lends oepnerp.web.ViewManagerAction# */{
     template:"ViewManagerAction",
     /**
-     * @constructs session.web.ViewManagerAction
-     * @extends session.web.ViewManager
+     * @constructs openerp.web.ViewManagerAction
+     * @extends openerp.web.ViewManager
      *
-     * @param {session.web.ActionManager} parent parent object/widget
+     * @param {openerp.web.ActionManager} parent parent object/widget
      * @param {Object} action descriptor for the action this viewmanager needs to manage its views.
      */
     init: function(parent, action) {
@@ -685,20 +704,19 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
             });
         }
         this._super(parent, null, action.views, flags);
-        this.session = parent.session;
         this.action = action;
-        var dataset = new session.web.DataSetSearch(this, action.res_model, action.context, action.domain);
+        var dataset = new openerp.web.DataSetSearch(this, action.res_model, action.context, action.domain);
         if (action.res_id) {
             dataset.ids.push(action.res_id);
             dataset.index = 0;
         }
         this.dataset = dataset;
 
-        // setup storage for session-wise menu hiding
-        if (this.session.hidden_menutips) {
+        // setup storage for openerp-wise menu hiding
+        if (openerp.hidden_menutips) {
             return;
         }
-        this.session.hidden_menutips = {}
+        openerp.hidden_menutips = {}
     },
     /**
      * Initializes the ViewManagerAction: sets up the searchview (if the
@@ -728,23 +746,24 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
         this.$element.find('.oe_debug_view').change(this.on_debug_changed);
 
         if (this.action.help && !this.flags.low_profile) {
-            var Users = new session.web.DataSet(self, 'res.users'),
+            var Users = new openerp.web.DataSet(self, 'res.users'),
                 $tips = this.$element.find('.oe_view_manager_menu_tips');
+            var _uid = openerp.webclient.session.uid;
             $tips.delegate('blockquote button', 'click', function() {
                 var $this = $(this);
                 //noinspection FallthroughInSwitchStatementJS
                 switch ($this.attr('name')) {
                 case 'disable':
-                    Users.write(self.session.uid, {menu_tips:false});
+                    Users.write(_uid, {menu_tips:false});
                 case 'hide':
                     $this.closest('blockquote').hide();
-                    self.session.hidden_menutips[self.action.id] = true;
+                    openerp.hidden_menutips[self.action.id] = true;
                 }
             });
-            if (!(self.action.id in self.session.hidden_menutips)) {
-                Users.read_ids([this.session.uid], ['menu_tips']).then(function(users) {
+            if (!(self.action.id in openerp.hidden_menutips)) {
+                Users.read_ids([_uid], ['menu_tips']).then(function(users) {
                     var user = users[0];
-                    if (!(user && user.id === self.session.uid)) {
+                    if (!(user && user.id === _uid)) {
                         return;
                     }
                     $tips.find('blockquote').toggle(user.menu_tips);
@@ -773,19 +792,19 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
             current_view = this.views[this.active_view].controller;
         switch (val) {
             case 'fvg':
-                var dialog = new session.web.Dialog(this, { title: _t("Fields View Get"), width: '95%' }).open();
-                $('<pre>').text(session.web.json_node_to_xml(current_view.fields_view.arch, true)).appendTo(dialog.$element);
+                var dialog = new openerp.web.Dialog(this, { title: _t("Fields View Get"), width: '95%' }).open();
+                $('<pre>').text(openerp.web.json_node_to_xml(current_view.fields_view.arch, true)).appendTo(dialog.$element);
                 break;
             case 'perm_read':
                 var ids = current_view.get_selected_ids();
                 if (ids.length === 1) {
                     this.dataset.call('perm_read', [ids]).then(function(result) {
-                        var dialog = new session.web.Dialog(this, {
+                        var dialog = new openerp.web.Dialog(this, {
                             title: _.str.sprintf(_t("View Log (%s)"), self.dataset.model),
                             width: 400
                         }, QWeb.render('ViewManagerDebugViewLog', {
                             perm : result[0],
-                            format : session.web.format_value
+                            format : openerp.web.format_value
                         })).open();
                     });
                 }
@@ -807,7 +826,7 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
                                 .append($('<dd style="white-space: pre-wrap;">').text(def));
                         });
                     });
-                    new session.web.Dialog(self, {
+                    new openerp.web.Dialog(self, {
                         title: _.str.sprintf(_t("Model %s fields"),
                                              self.dataset.model),
                         width: '95%'}, $root).open();
@@ -815,7 +834,7 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
                 break;
             case 'manage_views':
                 if (current_view.fields_view && current_view.fields_view.arch) {
-                    var view_editor = new session.web.ViewEditor(current_view, current_view.$element, this.dataset, current_view.fields_view.arch);
+                    var view_editor = new openerp.web.ViewEditor(current_view, current_view.$element, this.dataset, current_view.fields_view.arch);
                     view_editor.start();
                 } else {
                     this.do_warn(_t("Manage Views"),
@@ -884,6 +903,7 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
                 }
             } else {
                 $search_prefix.remove();
+                $search_prefix = null;
             }
         });
     },
@@ -923,8 +943,8 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
             return;
         }
         $shortcut_toggle.removeClass('oe-shortcut-remove').show();
-        if (_(this.session.shortcuts).detect(function (shortcut) {
-                    return shortcut.res_id === self.session.active_id; })) {
+        if (_(openerp.connection.shortcuts).detect(function (shortcut) {
+                    return shortcut.res_id === openerp.connection.active_id; })) {
             $shortcut_toggle.addClass("oe-shortcut-remove");
         }
         this.shortcut_add_remove();
@@ -936,12 +956,12 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
             .unbind("click")
             .click(function() {
                 if ($shortcut_toggle.hasClass("oe-shortcut-remove")) {
-                    $(self.session.shortcuts.binding).trigger('remove-current');
+                    $(openerp.connection.shortcuts.binding).trigger('remove-current');
                     $shortcut_toggle.removeClass("oe-shortcut-remove");
                 } else {
-                    $(self.session.shortcuts.binding).trigger('add', {
-                        'user_id': self.session.uid,
-                        'res_id': self.session.active_id,
+                    $(openerp.connection.shortcuts.binding).trigger('add', {
+                        'user_id': openerp.connection.uid,
+                        'res_id': openerp.connection.active_id,
                         'resource': 'ir.ui.menu',
                         'name': self.action.name
                     });
@@ -953,7 +973,7 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
      * Intercept do_action resolution from children views
      */
     on_action_executed: function () {
-        return new session.web.DataSet(this, 'res.log')
+        return new openerp.web.DataSet(this, 'res.log')
                 .call('get', [], this.do_display_log);
     },
     /**
@@ -991,7 +1011,7 @@ session.web.ViewManagerAction = session.web.ViewManager.extend(/** @lends oepner
     }
 });
 
-session.web.Sidebar = session.web.OldWidget.extend({
+openerp.web.Sidebar = openerp.web.OldWidget.extend({
     init: function(parent, element_id) {
         this._super(parent, element_id);
         this.items = {};
@@ -1000,12 +1020,12 @@ session.web.Sidebar = session.web.OldWidget.extend({
     start: function() {
         this._super(this);
         var self = this;
-        this.$element.html(session.web.qweb.render('Sidebar', {widget: self}));
+        this.$element.html(openerp.web.qweb.render('Sidebar', {widget: self}));
         this.$element.find(".toggle-sidebar").click(function(e) {
             self.do_toggle();
         });
         this.$element.find('.ea_all_attachments').prop('checked', true);
-        this.$element.find('.attachment_button').click(function(e) {
+        this.$element.delegate('.attachment_button', 'click', function(e) {
             self.click_attachment_button(e);
         });
     },
@@ -1062,6 +1082,7 @@ session.web.Sidebar = session.web.OldWidget.extend({
                     items[i] = {
                         label: items[i]['name'],
                         action: items[i],
+                        direct_print: items[i]['direct_print'],
                         classname: 'oe_sidebar_' + type[0]
                     }
                 }
@@ -1077,7 +1098,7 @@ session.web.Sidebar = session.web.OldWidget.extend({
 
         if(!$section) {
             var section_id = _.uniqueId(this.element_id + '_section_' + code + '_');
-            $section = $(session.web.qweb.render("Sidebar.section", {
+            $section = $(openerp.web.qweb.render("Sidebar.section", {
                 section_id: section_id,
                 name: name,
                 classname: 'oe_sidebar_' + code
@@ -1122,8 +1143,8 @@ session.web.Sidebar = session.web.OldWidget.extend({
                 items[i].element_id = _.uniqueId(section_id + '_item_');
                 this.items[items[i].element_id] = items[i];
             }
-            var $items = $(session.web.qweb.render("Sidebar.section.items", {items: items}));
-            $items.find('a.oe_sidebar_action_a').click(function() {
+            var $items = $(openerp.web.qweb.render("Sidebar.section.items", {items: items}));
+            $items.on('click', 'a.oe_sidebar_action_a', function() {
                 var item = self.items[$(this).attr('id')];
                 if (item.callback) {
                     item.callback.apply(self, [item]);
@@ -1184,12 +1205,12 @@ session.web.Sidebar = session.web.OldWidget.extend({
     }
 });
 
-session.web.TranslateDialog = session.web.Dialog.extend({
+openerp.web.TranslateDialog = openerp.web.Dialog.extend({
     dialog_title: {toString: function () { return _t("Translations"); }},
     init: function(view) {
         // TODO fme: should add the language to fields_view_get because between the fields view get
         // and the moment the user opens the translation dialog, the user language could have been changed
-        this.view_language = view.session.user_context.lang;
+        this.view_language = openerp.connection.user_context.lang;
         this['on_button_' + _t("Save")] = this.on_btn_save;
         this['on_button_' + _t("Close")] = this.on_btn_close;
         this._super(view, {
@@ -1204,14 +1225,14 @@ session.web.TranslateDialog = session.web.Dialog.extend({
         this.translatable_fields_keys = _.map(this.view.translatable_fields || [], function(i) { return i.name });
         this.languages = null;
         this.languages_loaded = $.Deferred();
-        (new session.web.DataSetSearch(this, 'res.lang', this.view.dataset.get_context(),
+        (new openerp.web.DataSetSearch(this, 'res.lang', this.view.dataset.get_context(),
             [['translatable', '=', '1']])).read_slice(['code', 'name'], { sort: 'id' }).then(this.on_languages_loaded);
     },
     start: function() {
         var self = this;
         this._super();
         $.when(this.languages_loaded).then(function() {
-            self.$element.html(session.web.qweb.render('TranslateDialog', { widget: self }));
+            self.$element.html(openerp.web.qweb.render('TranslateDialog', { widget: self }));
             self.$fields_form = self.$element.find('.oe_translation_form');
             self.$fields_form.find('.oe_trad_field').change(function() {
                 $(this).toggleClass('touched', ($(this).val() != $(this).attr('data-value')));
@@ -1300,7 +1321,7 @@ session.web.TranslateDialog = session.web.Dialog.extend({
     }
 });
 
-session.web.View = session.web.Widget.extend(/** @lends session.web.View# */{
+openerp.web.View = openerp.web.Widget.extend(/** @lends openerp.web.View# */{
     template: "EmptyComponent",
     // name displayed in view switchers
     display_name: '',
@@ -1322,7 +1343,7 @@ session.web.View = session.web.Widget.extend(/** @lends session.web.View# */{
     },
     open_translate_dialog: function(field) {
         if (!this.translate_dialog) {
-            this.translate_dialog = new session.web.TranslateDialog(this).start();
+            this.translate_dialog = new openerp.web.TranslateDialog(this).start();
         }
         this.translate_dialog.open(field);
     },
@@ -1334,7 +1355,7 @@ session.web.View = session.web.Widget.extend(/** @lends session.web.View# */{
      * @param {String} [action_data.special=null] special action handlers (currently: only ``'cancel'``)
      * @param {String} [action_data.type='workflow'] the action type, if present, one of ``'object'``, ``'action'`` or ``'workflow'``
      * @param {Object} [action_data.context=null] additional action context, to add to the current context
-     * @param {session.web.DataSet} dataset a dataset object used to communicate with the server
+     * @param {openerp.web.DataSet} dataset a dataset object used to communicate with the server
      * @param {Object} [record_id] the identifier of the object on which the action is to be applied
      * @param {Function} on_closed callback to execute when dialog is closed or when the action does not generate any result (no new action)
      */
@@ -1343,21 +1364,13 @@ session.web.View = session.web.Widget.extend(/** @lends session.web.View# */{
         var self_reload = function(dataset_index) {
             if (self.model == dataset.model) {
                 self.dataset.index=((typeof(dataset_index)!=='undefined')?dataset_index:self.dataset.ids.indexOf(record_id));
-                self.reload();
+                setTimeout(function(){ self.reload(); }, 0);
             }
         };
         var result_handler = function () {
             if (on_closed) { on_closed.apply(null, arguments); }
             if (self.widget_parent && self.widget_parent.on_action_executed) {
                 self.dataset.index=self.dataset.ids.indexOf(record_id);
-                // var _inner_viewmanager = self.widget_parent.widget_parent.inner_viewmanager;
-                // if (typeof(_inner_viewmanager)!=='undefined' && _inner_viewmanager!==null) {
-                //     var main_form = _inner_viewmanager.views.form.controller;
-                //     if (typeof(main_form)!=='undefined' && main_form!==null) {
-                //         var record_to_reload = main_form.datarecord;
-                //         // preparetion = main_form.on_record_loaded(record_to_reload);
-                //     }
-                // }
                 if(typeof(self.widget_parent.widget_parent.widget_parent.view_form)!=='undefined'
                     && self.widget_parent.widget_parent.widget_parent.view_form.model !== dataset.model){
                     var object_execute = self.widget_parent.widget_parent.widget_parent;
@@ -1373,12 +1386,15 @@ session.web.View = session.web.Widget.extend(/** @lends session.web.View# */{
                     });
             }
         };
-        var context = new session.web.CompoundContext(dataset.get_context(), action_data.context || {});
+        var context = new openerp.web.CompoundContext(dataset.get_context(), action_data.context || {});
 
         var handler = function (r) {
             var action = r.result;
+            if (action.warning) {
+                self.do_notify("Warning", action.warning, true);
+            }
             if (action && action.constructor == Object) {
-                var ncontext = new session.web.CompoundContext(context);
+                var ncontext = new openerp.web.CompoundContext(context);
                 if (record_id) {
                     ncontext.add({
                         active_id: record_id,
@@ -1431,7 +1447,7 @@ session.web.View = session.web.Widget.extend(/** @lends session.web.View# */{
     /**
      * Directly set a view to use instead of calling fields_view_get. This method must
      * be called before start(). When an embedded view is set, underlying implementations
-     * of session.web.View must use the provided view instead of any other one.
+     * of openerp.web.View must use the provided view instead of any other one.
      *
      * @param embedded_view A view.
      */
@@ -1474,11 +1490,11 @@ session.web.View = session.web.Widget.extend(/** @lends session.web.View# */{
         sidebar.add_default_sections();
     },
     on_sidebar_import: function() {
-        var import_view = new session.web.DataImport(this, this.dataset);
+        var import_view = new openerp.web.DataImport(this, this.dataset);
         import_view.start();
     },
     on_sidebar_export: function() {
-        var export_view = new session.web.DataExport(this, this.dataset);
+        var export_view = new openerp.web.DataExport(this, this.dataset);
         export_view.start();
     },
     on_sidebar_translate: function() {
@@ -1503,7 +1519,7 @@ session.web.View = session.web.Widget.extend(/** @lends session.web.View# */{
     }
 });
 
-session.web.json_node_to_xml = function(node, human_readable, indent) {
+openerp.web.json_node_to_xml = function(node, human_readable, indent) {
     // For debugging purpose, this function will convert a json node back to xml
     // Maybe useful for xml view editor
     indent = indent || 0;
@@ -1532,7 +1548,7 @@ session.web.json_node_to_xml = function(node, human_readable, indent) {
         r += '>' + cr;
         var childs = [];
         for (var i = 0, ii = node.children.length; i < ii; i++) {
-            childs.push(session.web.json_node_to_xml(node.children[i], human_readable, indent + 1));
+            childs.push(openerp.web.json_node_to_xml(node.children[i], human_readable, indent + 1));
         }
         r += childs.join(cr);
         r += cr + sindent + '</' + node.tag + '>';
@@ -1541,7 +1557,4 @@ session.web.json_node_to_xml = function(node, human_readable, indent) {
         return r + '/>';
     }
 }
-
-};
-
 // vim:et fdc=0 fdl=0 foldnestmax=3 fdm=syntax:

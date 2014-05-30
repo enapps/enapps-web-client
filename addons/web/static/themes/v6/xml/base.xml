@@ -576,20 +576,6 @@
 </t>
 
 <t t-extend="ViewManager" t-name="ViewManagerAction">
-    <t t-jquery=".view-manager-main-table tbody" t-operation="prepend">
-        <tr>
-            <td class="oe_view_manager_menu_tips" colspan="2">
-                <blockquote t-if="self.action.help and !self.flags.low_profile
-                                 and !(self.action.id in self.session.hidden_menutips)">
-                    <p><t t-esc="self.action.help"/></p>
-                    <div>
-                        <button type="button" name="hide">Hide this tip</button>
-                        <button type="button" name="disable">Disable all tips</button>
-                    </div>
-                </blockquote>
-            </td>
-        </tr>
-    </t>
     <t t-jquery=".oe_vm_switch" t-operation="after">
         <a t-if="self.flags.display_title !== false" class="oe-shortcut-toggle" title="Add / Remove Shortcut..."
             href="javascript: void(0)"> </a>
@@ -1284,7 +1270,7 @@
         t-attf-class="field_#{widget.type}"
         style="width: 100%">
             <t t-foreach="widget.values" t-as="option">
-                <option><t t-esc="option[1]"/></option>
+                <option t-att-value="option[0]"><t t-esc="option[1]"/></option>
             </t>
     </select>
 </t>

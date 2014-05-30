@@ -2,7 +2,7 @@
  * handles editability case for lists, because it depends on form and forms already depends on lists it had to be split out
  * @namespace
  */
-openerp.web.list_editable = function (openerp) {
+openerp.web.list_editable = {};
     var KEY_RETURN = 13,
         KEY_ESCAPE = 27;
     var QWeb = openerp.web.qweb;
@@ -109,12 +109,6 @@ openerp.web.list_editable = function (openerp) {
             // TODO: handle multiple children
             this.children[null].new_record(row_index);
         },
-        re_adjust_edition_form: function() {
-            if (!!this.children[null].edition_form && this.children[null].edition_form.$element.parent('.form-cont').length>0) {
-                this.children[null].get_fields_widths();
-                this.children[null].adjust_form_view();
-            }
-        },
         /**
          * Ensures descendant editable List instances are all saved if they have
          * pending editions.
@@ -137,26 +131,33 @@ openerp.web.list_editable = function (openerp) {
                 self.session.window_pos = window.scrollY;
                 self.edit_record($(event.currentTarget).data('id'), event);
             }
-            else {if (self.edition) {self.edition_form.$element.unbind(); self.ensure_saved().then(function(){self.remove_edition_form()}); } }
+            else {
+                if (self.edition) {
+                    self.ensure_saved(true).then(function(){
+                        self.edition_form.$element.hide();
+                    });
+                }
+            }
         },
         init: function(view, node) {
             var self = this;
             self._super(view, node);
             if (self.view.__template__==="ListView" && self.view.dataset.widget_parent
                 && self.view.dataset.widget_parent.view
-                && self.view.dataset.widget_parent.view.on_button_save) {
-                self.view.dataset.widget_parent.view.on_saved.add_first(function(){
-                    self.ensure_saved(false);
-                    if (self.edition_form) {
-                        self.edition_form.$element.unbind();
-                    }
-                });
+                && self.view.dataset.widget_parent.view.on_saved) {
+                    if (self.view.dataset.widget_parent.view instanceof openerp.web.FormView
+                        && self.view.dataset.widget_parent.view instanceof openerp.web.ListEditableFormView == false )
+                            self.view.dataset.widget_parent.view.do_save.add_first(function(){
+                                self.ensure_saved(false);
+                            });
+                    self.view.dataset.widget_parent.view.on_saved.add_first(function(){
+                        self.ensure_saved(false);
+                    });
                 self.view.do_delete.add_last(function(del_id,res){
                     self.session.window_pos = window.scrollY;
                     if (self.edition_id) {
                         if (self.edition_id===del_id[0]) {
                             self.show_edited_row();
-                            self.remove_edition_form();
                         } else {
                             if (self.$current!==null){
                             var del_h = self.$current.find('[data-id=' + del_id[0] + ']').outerHeight(true);
@@ -165,17 +166,8 @@ openerp.web.list_editable = function (openerp) {
                                     $this_form.css('top',$this_form.position().top-del_h);
                                 }
                             }
-                            // else { self.remove_edition_form(); }
                         }
                     }
-                });
-                self.view.dataset.on_change && self.view.dataset.on_change.add(function(){
-                    if ((self.dataset.to_write.length>0 || self.dataset.to_create.length>0)
-                        && !self.view.save_reminder
-                        && !!self.view.dataset.parent_view.sidebar
-                        ) {
-                            // self.reminder_save();
-                        }
                 });
             }
         },
@@ -209,7 +201,8 @@ openerp.web.list_editable = function (openerp) {
         },
         on_row_keyup: function (e) {
             var self = this;
-            var created_flag = false;
+            self.has_been_saved = null;
+            self.has_been_saved = new $.Deferred();
             switch (e.which) {
             case 33:
             // PageUp key
@@ -220,10 +213,11 @@ openerp.web.list_editable = function (openerp) {
             case 36:
             // Home key
             case KEY_RETURN:
+                var created_flag = false;
                 for (el in self.dataset.to_create) {
                     if (self.dataset.to_create[el].id===self.dataset.context.active_id) created_flag=true;
                 }
-                $(e.target).blur();
+                // $(e.target).blur();
                 e.preventDefault();
                 e.stopImmediatePropagation();
                 setTimeout(function () {
@@ -237,7 +231,7 @@ openerp.web.list_editable = function (openerp) {
                         saved_def.resolve({'edited_record': self.records.get(self.edition_id)});
                     }
                     saved_def.done(function (result) {
-                        self.edition_form.$element.unbind('focusout');
+                        // self.edition_form.$element.unbind('focusout');
                         created_flag = created_flag || (!!self.edition_form ? self.edition_form.created_flag : true);
                         if ( (result && result.created) || created_flag && !self.edition_form ) {
                             if (typeof(self.dataset.to_create) == 'undefined')
@@ -310,7 +304,7 @@ openerp.web.list_editable = function (openerp) {
             case KEY_ESCAPE:
                 this.cancel_edition().done(function(){
                     if (self.edition_form) {
-                        self.edition_form.$element.unbind();
+                        // self.edition_form.$element.unbind();
                         self.edition_form.$element.hide();
                     };
                     self.show_edited_row();
@@ -350,9 +344,11 @@ openerp.web.list_editable = function (openerp) {
         adjust_form_view: function () {
             if (!!this.dataset.parent_view && this.dataset.parent_view.$element.is(':visible')==false) return;
             var self = this,
-                $new_row = self.edition_form.$element,
+                $new_row = this.edition_form.$element,
                 $this_form = $new_row.parent('div'),
-                current_row = self.$current.find('tr[data-id="'+self.edition_id+'"]'),
+                current_row = this._get_current_row(this.edition_id),
+                current_row = ( this.dataset.index === null || !current_row.find('.oe-field-cell:visible:first').length )
+                    ? this.$current.find('.oe_fake_list_row') : current_row,
                 firstColumn = $new_row.find('>td').filter(':visible:first'),
                 firstColWidth = 0;
             $new_row.find('> td')
@@ -369,11 +365,18 @@ openerp.web.list_editable = function (openerp) {
             self.flexible_textarea($new_row.find('textarea')[0]);
             if (current_row.length > 0) {
                 current_row.children('td:not(.oe-record-delete)').attr('disabled', 'disabled').css('visibility','hidden');
-                var left_f = current_row.find('.oe-field-cell:visible:first').position().left,
+                var left_f = self.edition_id === null || current_row.children().length == 0
+                        ? self.dataset.widget_parent.$element.find('thead:visible th[data-id]:visible:first').position().left
+                        : current_row.find('.oe-field-cell:visible:first').position().left
+                        ,
                     top_f = current_row.position().top,
                     row_height = Math.max(35,$this_form.outerHeight())+'px';
             }
             // var form_pad_top = $.browser.mozilla ? (-1*(current_row.outerHeight()+4)) : 0;
+            var list_container = self.view.widget_parent;
+            if (list_container && list_container.$element && list_container.$element.scrollTop() > 0) {
+                top_f+=self.view.widget_parent.$element.scrollTop();
+            }
             $new_row.parent('div').css({'top':top_f,'left':left_f});
             _.each(_.difference(self.edition_form.fields,Object.keys(self.field_width)), function(el) {
                 self.edition_form.$element.find('[name="'+el+'"]').closest('td').css('display','none')
@@ -385,6 +388,12 @@ openerp.web.list_editable = function (openerp) {
             hidden_colmns.closest('td.oe_form_button').css({'min-width':'0px','display':''});
             hidden_colmns.hide();
             return $.when();
+        },
+        re_adjust_edition_form: function() {
+            if (!!this.edition_form && this.edition_form.$element.parent('.form-cont').length>0 && this.$current) {
+                this.get_fields_widths();
+                this.adjust_form_view();
+            }
         },
         adjust_row_height: function(e,t) {
             var self = this;
@@ -403,6 +412,7 @@ openerp.web.list_editable = function (openerp) {
                 $addNewRow.css('visibility','visible');
             },sec);
         },
+
         recalculate_sequnces: function(target_row_index,new_seq) {
             var list = this,
                 dataset = list.dataset,
@@ -430,7 +440,8 @@ openerp.web.list_editable = function (openerp) {
             var self = this,
                 new_seq,
                 ind_to_replace = (target_row_index-1)<0?0:target_row_index;
-            if (this.records.at(target_row_index).attributes.sequence<=1) {
+            if (this.records.at(target_row_index).attributes.sequence<=1)
+            {
                 new_seq = 0;
             } else {
                 new_seq = self.records.get(self.$current.find('tr[data-id]:nth(' + ind_to_replace + ')').data('id')).attributes.sequence;
@@ -445,7 +456,7 @@ openerp.web.list_editable = function (openerp) {
                     );
             }
             self.dataset.write(saved_id, {sequence: new_seq});
-            delete self.edition_insertion;
+            self.edition_insertion = null;
             return self.recalculate_sequnces(target_row_index+1,new_seq).done(function(){
                 var to_move = _.find(self.records.records, function(el) {return el.attributes.id === saved_id});
                 self.records.remove(to_move);
@@ -481,7 +492,7 @@ openerp.web.list_editable = function (openerp) {
             }
             return result
         },
-        check_required_fields: function() {
+        check_required_fields_empty: function() {
             var self = this,
                 res = _.any(_.filter(self.edition_form.fields, function(fd){if (fd.required===true) { return fd }}), function(el) {
                 if ($(self.edition_form.$element).find('[name="'+el.name+'"]').val()==='' || 0) {return el}
@@ -491,125 +502,107 @@ openerp.web.list_editable = function (openerp) {
         get_window_position: function() {
             this.session.window_pos = window.scrollY;
         },
-        add_form_listeners: function (target_row_index) {
-            var self = this;
-            var $form = self.edition_form.$element;
-            var new_line = false;
-            self.edition_insertion = target_row_index;
-            self.has_been_saved = new $.Deferred();
-            var refresh = (function(e) {
-                if (!self.edition_form) return;
-                self.has_been_saved = new $.Deferred();
-                if (e!=null) {
-                    e.stopPropagation();
-                    e.stopImmediatePropagation();
-                    if (!!e.relatedTarget && e.relatedTarget.isEqualNode($('button.oe-edit-row-save')[0])) {
-                        return self.ensure_saved(true).done(function(){
-                            self.dataset.parent_view && self.dataset.parent_view.do_save();
-                        })
-                     }
+        silent_refresh_ed_form: function(e) {
+            var self = this,
+                target_row_index = self.edition_insertion,
+                new_line = false;
+            this.has_been_saved = new $.Deferred();
+            if (e!=null) {
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                if (!!e.relatedTarget && e.relatedTarget.isEqualNode($('button.oe-edit-row-save')[0])) {
+                    return self.ensure_saved(true).done(function(){
+                        self.has_been_saved.resolve();
+                        return self.dataset.parent_view && self.dataset.parent_view.do_save();
+                    })
+                 }
+            }
+            var is_insertion = ((target_row_index!=null) && _.isNumber(target_row_index))?true:false;
+            if ( !!self.edition_form && self.complex_dirty_check() ) {
+                if (self.dataset.index!==null) {
+                    self.edition_form.do_save(null, self.options.editable === 'top').done(function(){
+                        self.reload_edited_record();
+                        self.get_default_fields_values();
+                        self.has_been_saved.resolve();
+                    });
+                    self._get_current_row(self.edition_id).children('td').css('visibility','hidden');
                 }
-                var is_insertion = ((target_row_index!=null) && _.isNumber(target_row_index))?true:false;
-                if ( !!self.edition_form && self.edition_form.is_dirty() && self.check_if_changed() && !self.check_required_fields() ) {
-                    if (self.dataset.index!==null) {
-                        var $source_row = self.$current.find('tr[data-id="'+self.edition_id+'"]');
-                        if (new_line==false) {
-                            self.ensure_saved(false).done(function(){
-                                self.$current.find('tr[data-id="'+self.edition_id+'"]').children('td').css('visibility','hidden');
-                                if (!!self.edition_form) {
-                                    self.get_default_fields_values();
-                                    self.get_fields_widths();
-                                    self.adjust_form_view();
-                                    // self.adjust_row_height(e,1);
-                                }
+                else if (typeof(e.srcElement)=='undefined' || e.srcElement.tagName!="SELECT")
+                {
+                    if (!is_insertion && !!self.edition_form.fields.sequence && !!self.edition_form.fields.parent_id && self.edition_form.fields.parent_id.value==null)
+                        self.set_row_seq_bottom();
+                    self.edition_form.do_save(null, self.options.editable === 'top').done(function (result) {
+                        if (result.created && !self.edition_id) {
+                            if (target_row_index!=null && _.isNumber(target_row_index)) {
+                                $.blockUI();
+                                self.save_row_at(target_row_index, result.result).then(
+                                        function(){
+                                            self.has_been_saved.resolve();
+                                            $.unblockUI();
+                                        }
+                                    );
+                            } else {
                                 self.has_been_saved.resolve();
-                            });
-                        } else {
-                            self.edition_form.do_save(null, self.options.editable === 'top').done(function(){
-                                self.get_default_fields_values();
-                                self.has_been_saved.resolve();
-                            });
-                            $source_row.children('td').css('visibility','hidden');
-                        }
-                    }
-                    else if (typeof(e.srcElement)=='undefined' || e.srcElement.tagName!="SELECT") {
-                        if (!is_insertion && !!self.edition_form.fields.sequence && !!self.edition_form.fields.parent_id && self.edition_form.fields.parent_id.value==null)
-                            self.set_row_seq_bottom();
-                        self.edition_form.do_save(null, self.options.editable === 'top').done(function (result) {
-                            if (result.created && !self.edition_id) {
-                                if (target_row_index!=null && _.isNumber(target_row_index)) {
-                                    self.save_row_at(target_row_index, result.result);
-                                    self.edition_insertion = target_row_index;
-                                } else {
-                                    self.records.add({id: result.result}, {at: self.options.editable === 'top' ? 0 : null});
-                                }
-                                self.get_default_fields_values();
-                                self.edition_id = result.result;
-                                new_line = true;
-                                self.$current.find('tr[data-id="'+result.result+'"]').hide();
-                                self.has_been_saved.resolve();
+
+                                self.records.add({id: result.result}, {at: self.options.editable === 'top' ? 0 : null});
+                                self.show_save_form_button();
                             }
-                        })
-                    }
-                } else {
-                    if (!self.edition_form.is_dirty() || !self.check_if_changed()) self.has_been_saved.resolve();
+                            self.get_default_fields_values();
+                            self.edition_id = result.result;
+                            new_line = true;
+                            self._get_current_row(result.result).hide();
+                        }
+                    })
                 }
-            });
-            var delay = (function(){
-                var timer = 0;
-                return function(callback, ms){
-                    clearTimeout(timer);
-                    timer = setTimeout(callback, ms);
-                };
-            })();
+            } else if (!self.edition_form.is_dirty() || !self.check_if_changed()) {
+                self.has_been_saved.resolve();
+            } else {
+                self.has_been_saved.reject();
+            }
+            return this.has_been_saved.promise();
+        },
+        setup_form_listeners: function (target_row_index) {
+            var self = this,
+                $form = self.edition_form.$element;
             self.get_window_position();
             if (typeof(self.dataset.widget_parent.widget_parent.widget_parent.sidebar)!=='undefined'){
                 var sidebar_toggle = self.dataset.widget_parent.widget_parent.widget_parent.sidebar.do_toggle;
                 if (sidebar_toggle.callback_chain.length>1) { sidebar_toggle.callback_chain.pop(); }
                 sidebar_toggle.add_last(function(){
                     if (self.edition_form && self.$current)
-                    {self.get_fields_widths();self.adjust_form_view();}
+                    {
+                        self.re_adjust_edition_form();
+                    }
                 });
             };
-                self.edition_form.$element
-                    // .delegate('button.oe-edit-row-save', 'click', function () {
-                    //     self.save_row(); })
-                    // .delegate('input','focusout', function(e) {e.stopPropagation(); refresh(e)})
-                    .delegate('button', 'keyup', function (e) {
+            self.edition_form.$element
+                .delegate('button', 'keyup', function (e) {
+                    e.stopImmediatePropagation();
+                })
+                .delegate('input[type="checkbox"]','click', function(e){
+                    e.stopPropagation();
+                    self.silent_refresh_ed_form(e);
+                })
+                .delegate('td:not(.oe_form_field_boolean)','click', function(e) {
+                    e.stopImmediatePropagation();
+                    self.adjust_row_height(e);
+                })
+                .keyup(function (e) {
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    return self.on_row_keyup.apply(self, arguments);
+                })
+                .keydown(function (e) {
+                    e.stopPropagation();
+                    if (e.which == 33 || e.which == 34) e.preventDefault();
+                    if (e.shiftKey && e.which==KEY_RETURN) {
+                        e.preventDefault();
                         e.stopImmediatePropagation();
-                    })
-                    .delegate('input[type="checkbox"]','click', function(e){
-                        e.stopPropagation();
-                        refresh(e);
-                    })
-                    .delegate('td:not(.oe_form_field_boolean)','click', function(e) {
-                        e.stopImmediatePropagation();
-                        self.adjust_row_height(e);
-                    })
-                    .keyup(function (e) {
-                        e.stopPropagation();
-                        e.stopImmediatePropagation();
-                        return self.on_row_keyup.apply(self, arguments);
-                    })
-                    .keydown(function (e) {
-                        e.stopPropagation();
-                        if (e.which == 33 || e.which == 34) e.preventDefault();
-                        if (e.shiftKey && e.which==KEY_RETURN) {
-                            e.preventDefault();
-                            e.stopImmediatePropagation();
-                        }
-                    })
-                    .keypress(function (e) {
-                        if (e.which === KEY_RETURN) {
-                            // self.edition_form.$element.unbind('focusout');
-                            return false;
-                        }
-                    });
-                self.edition_form.on_created.add_last(function(){
-                    self.get_default_fields_values();
-                    self.edition_form.created_flag = true;
-                });
-                self.edition_form.$element.bind('focusout',function(e) {
+                    }
+                })
+                .bind('focusout',function(e) {
+                    self.__trg_field = e.relatedTarget;
+                    self.edition_form.forbid_focus_default = true;
                     if (
                         e.relatedTarget
                         && ( e.relatedTarget.classList.contains('oe_form_button_save') || e.relatedTarget.classList.contains('oe-edit-row-save') )
@@ -621,136 +614,58 @@ openerp.web.list_editable = function (openerp) {
                             self.dataset.parent_view.is_initialized.resolve();
                         });
                     } else {
-                        $.async_when().then(function(){ refresh(e); });
+                        $.async_when().then(function(){
+                            if ( self.edition_form
+                                && ( this.has_been_saved && this.has_been_saved.state() != 'pending' || !this.has_been_saved )
+                                )
+                                self.silent_refresh_ed_form(e,null).always(function(){
+                                    self.has_been_saved = new $.Deferred();
+                                    setTimeout(function(){
+                                        !!self.__trg_field && $(self.__trg_field).focus().select();
+                                        self.__trg_field = null;
+                                        delete self.__trg_field;
+                                    }, 200);
+                                })
+                        });
                     }
+                })
+                .delegate('textarea','keyup',function(ele){
+                    self.flexible_textarea(this);
                 });
-                self.edition_form.$element.find('textarea').keyup(function(ele){self.flexible_textarea(this);})
-                    // .bind('focusin',function(ele){self.flexible_textarea(this)})
-                    .end();
-                self.edition_form.do_save.add_last(function(){
-                    self.get_default_fields_values();
-                });
-                // self.edition_form.do_onchange.add(function(){
-                    // if (self.edition_form.is_dirty()) self.edition_form.do_save();
-                // });
+            self.edition_form.on_created.add_last(function(){
+                self.get_default_fields_values();
+                self.edition_form.created_flag = true;
+            });
+            self.edition_form.do_save.add_last(function(){
+                self.get_default_fields_values();
+            });
             return true;
         },
-        make_empty_form: function (row, target_row_index) {
-            var self = this;
-            return $.async_when().then(function() {
-                self.$current.find('tr.selected').removeClass('selected');
-                var record_id = $(row).data('id'),
-                    $new_row = $('<tr>', {
-                        id: _.uniqueId('oe-editable-row-'),
-                        'data-id': record_id,
-                        'class': (row ? $(row).attr('class') : '') + ' oe_forms',
-                        click: function (e) {e.stopPropagation();}
-                    });
-                if (self.options.editable) {
-                    var $last_child = self.$current.children('tr:last');
-                    if (self.records.length) {
-                        if (typeof(target_row_index)!=='undefined' && _.isNumber(target_row_index)) {
-                            $new_row.insertBefore(self.$current.children('[data-id]:nth-child('+(target_row_index+1)+')'));
-                        } else {
-                            if (self.options.editable === 'top') {
-                                $new_row.insertBefore(
-                                    self.$current.children('[data-id]:first'));
-                            } else {
-                                $new_row.insertAfter(
-                                    self.$current.children('[data-id]:last'));
-                                var table_bottom_position = self.$current.outerHeight()+self.$current.position().top;
-                                if (!(window.scrollY <= table_bottom_position && table_bottom_position <= window.scrollY+document.body.clientHeight))
-                                    $('body').animate({ scrollTop: table_bottom_position }, 1000);
-                            }
-                        }
-                    } else {
-                        $new_row.prependTo(self.$current);
-                    }
-                    if ($last_child.is(':not([data-id])')) {
-                        $last_child.remove();
-                    }
-                }
-                self.edition = true;
-                self.edition_id = record_id;
-                self.dataset.index = _(self.dataset.ids).indexOf(record_id);
-                if (self.dataset.index === -1) {
-                    self.dataset.index = null;
-                }
-                self.edition_form = _.extend(new openerp.web.ListEditableFormView(self.view, self.dataset, false), {
+        get_edition_form_element: function(row) {
+            var self = this,
+                $new_row = $('<tr>', {
+                    id: _.uniqueId('oe-editable-row-'),
+                    'data-id': $(row).data('id'),
+                    'class': (row ? $(row).attr('class') : '') + ' oe_forms'
+                });
+            return _.extend(new openerp.web.ListEditableFormView(self.view, self.dataset, false), {
                     form_template: 'ListView.row.form',
                     registry: openerp.web.list.form.widgets,
                     $element: $new_row
-                });
-
-                self.edition_form.appendTo();
-                self.edition_form.$element.hide();
-                return $.when(self.edition_form.on_loaded(self.get_form_fields_view())).done(function () {
-                    $new_row.find('> td')
-                          .addClass('oe-field-cell')
-                          .removeAttr('width')
-                          .removeAttr('colspan')
-                      .end()
-                      .find('td textarea').attr('rows','1')
-                      .find('td:last').removeClass('oe-field-cell').end();
-                    if (self.options.isClarkGable) {
-                        $new_row.prepend('<th>');
-                    }
-                    _(self.columns).each(function (column) {
-                        if (column.meta) {
-                            $new_row.prepend('<td>');
-                        }
-                    });
-                    if (!self.options.deletable) {
-                        self.view.pad_columns(
-                            1, {except: $new_row});
-                    }
-                    return $.when(self.edition_form.do_show()).done(function() {
-                        self.edition_form.$element.show();
-                        $new_row.find('td.oe_form_button').css('display', '');
-                        self.add_save_form_button($new_row);
-                        self.edition_form.$element.find('[name]:visible:not([type="checkbox"]):first').focus().select();
-                        self.add_form_listeners(target_row_index);
-                        self.add_link_create_line();
-                        self.edition_form.default_fields_vals = self.get_default_fields_values();
-                        self.edition_insertion = target_row_index;
-                        if (!!self.edition_form.datarecord.sequence
-                            && !!self.edition_form.dataset.cache
-                            && !!self.edition_form.dataset.cache[0])
-                        {
-                            if (self.edition_insertion==null)
-                            {
-                                with (self.edition_form.fields) {
-                                    sequence.$element.find('input').val(
-                                        sequence.value = self.edition_form.datarecord.sequence = _.max(self.edition_form.dataset.cache, function(rec){return rec.values.sequence}).values.sequence+1
-                                    );
-                                }
-                            }
-                            else {
-                                self.edition_form.fields.sequence.value = self.edition_form.datarecord.sequence = self.edition_form.dataset.cache[target_row_index].values.sequence;
-                            }
-                        }
-                        self.adjust_form_view();
-                    });
-                });
-            })
+            });
         },
         add_save_form_button: function(row_element) {
+            if (this.edition_form.$element.find('button.oe-edit-row-save').length>0)
+            {
+                this.show_save_form_button();
+                return;
+            }
             var self = this;
             var $row = $(row_element);
             var $column;
             var $save_form_button = $('<button>',{
                 'class': 'oe-edit-row-save',
-                'type': 'button',
-                click: function(e){
-                    e.preventDefault();
-                    e.stopImmediatePropagation();
-                    try {
-                        self.dataset.parent_view.do_save();
-                    } catch(err) {
-                        self.edition_form.do_save();
-                        self.$current.parents('.view-manager-main-content:last').find('button.oe_form_button_save').click();
-                    }
-                }
+                'type': 'button'
             });
             if (self.edition_id) {
                 $row.append();
@@ -762,59 +677,42 @@ openerp.web.list_editable = function (openerp) {
                 $column = $row.find('th:not([class]):first');
             }
             $column.append($save_form_button);
+            $row.on('click', 'button.oe-edit-row-save', function(e){
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                try {
+                    self.dataset.parent_view.do_save();
+                } catch(err) {
+                    self.edition_form.do_save();
+                    self.$current.parents('.view-manager-main-content:last').find('button.oe_form_button_save').click();
+                }
+            });
+        },
+        hide_save_form_button: function() {
+            this.edition_form.$element.find('button.oe-edit-row-save').hide();
+        },
+        show_save_form_button: function() {
+            this.edition_form.$element.find('button.oe-edit-row-save').show();
         },
         start_edition: function (row, target_field) {
             var self = this;
             var record_id = $(row).data('id');
             var $new_row = self.edition_form.$element;
+            $(row).show();
+            this.remove_fake_row();
             self.show_edited_row();
-            return $.when().done(function () {
-                $(row).children('td:not(.oe-record-delete)').css('visibility','hidden').attr('disabled', 'disabled').removeClass('selected');
-                self.edition = true;
-                self.edition_id = record_id;
-                self.dataset.index = _(self.dataset.ids).indexOf(record_id);
-                self.edition_form.$element.show();
-                self.edition_form = _.extend(new openerp.web.ListEditableFormView(self.view, self.dataset, false), {
-                    form_template: 'ListView.row.form',
-                    registry: openerp.web.list.form.widgets,
-                    $element: $new_row
-                });
-                self.edition_form.appendTo();
-                $.when(self.edition_form.on_loaded(self.get_form_fields_view())).then(function () {
-                    delete self.edition_form.default_focus_field;
-                    self.edition_form.$element.find('> td')
-                          .addClass('oe-field-cell')
-                          .removeAttr('width')
-                          .removeAttr('colspan')
-                      .end()
-                    if (self.options.isClarkGable) {
-                        $new_row.prepend('<th>');
-                    }
-                    _(self.columns).each(function (column) {
-                        if (column.meta) {
-                            $new_row.prepend('<td>');
-                        }
-                    });
-                    if (!self.options.deletable) {
-                        self.view.pad_columns(
-                            1, {except: $new_row});
-                    }
-                });
-
-                $.async_when(self.edition_form.do_show()).done(function() {
-                    self.add_form_listeners();
-                    // self.edition_form.default_fields_vals = self.get_default_fields_values();
-                    self.edition_form.$element.find('[name="' + target_field + '"]').focus().select();
-                    self.get_fields_widths();
-                    self.adjust_form_view();
-                    if (!!self.view.window_pos) { window.scrollTo(0,self.view.window_pos);}
-                });
-                self.edition = true;
-                self.edition_id = record_id;
-                if (self.dataset.index === -1) {
-                    self.dataset.index = null;
-                }
+            $(row).children('td:not(.oe-record-delete)').attr('disabled', 'disabled').removeClass('selected');
+            self.edition = true;
+            self.edition_id = record_id;
+            self.dataset.index = _(self.dataset.ids).indexOf(record_id);
+            if (self.dataset.index === -1) {
+                self.dataset.index = null;
+            }
+            self.edition_form.forbid_focus_default = true;
+            return self.edition_form.do_show().then(function(){
+                if (!!self.view.window_pos) { window.scrollTo(0,self.view.window_pos);}
                 self.edition_form.default_fields_vals = self.get_default_fields_values();
+                return $.Deferred().resolve();
             });
         },
 
@@ -823,24 +721,14 @@ openerp.web.list_editable = function (openerp) {
             if (typeof(row)=='undefined') row=null;
             return $.when().done(function () {
                 var record_id = $(row).data('id');
-                var $new_row = $('<tr>', {
-                        id: _.uniqueId('oe-editable-row-'),
-                        'data-id': record_id,
-                        'class': (row ? $(row).attr('class') : '') + ' oe_forms',
-                        click: function (e) {e.stopPropagation();}
-                    })
-                    .removeClass('selected');
                 self.edition = true;
                 self.edition_id = record_id;
                 self.dataset.index = _(self.dataset.ids).indexOf(record_id);
                 if (self.dataset.index === -1) {
                     self.dataset.index = null;
                 }
-                self.edition_form = _.extend(new openerp.web.ListEditableFormView(self.view, self.dataset, false), {
-                    form_template: 'ListView.row.form',
-                    registry: openerp.web.list.form.widgets,
-                    $element: $new_row
-                });
+                self.edition_form = self.get_edition_form_element(row);
+                var $new_row = self.edition_form.$element;
                 self.edition_form.appendTo();
                 $.when(self.edition_form.on_loaded(self.get_form_fields_view())).then(function () {
                     if (self.options.isClarkGable) {
@@ -857,15 +745,78 @@ openerp.web.list_editable = function (openerp) {
                     }
                     $new_row.find('td.oe_form_button').css('display', '');
                 });
-                self.start_edition(row, target_field);
                 $new_row.prependTo(self.$current.parents()[1]);
                 var $this_form = $($new_row.wrap('<div>').parents()[0]);
-                // if ($.browser.mozilla) self.$current.parents()[1].style.cssText="position: relative";
-                $this_form.css('position','absolute');
-                $this_form.addClass('form-cont');
-                return $.when();
+                $this_form.css('position','absolute').addClass('form-cont');
+                self.edition_form.$element.removeClass('selected').hide();
+                self.setup_form_listeners();
+            });
+        },
+        make_empty_form: function (row, target_row_index) {
+            var self = this;
+            return $.when().then(function() {
+                var $new_row = self.edition_form.$element;
+                if (self.options.editable) {
+                    var $last_child = self.$current.children('tr:last'),
+                        $fake_row = $('<tr class="oe_fake_list_row" style="height: 30px">');
+                    if (self.records.length) {
+                        if (typeof(target_row_index)!=='undefined' && _.isNumber(target_row_index)) {
+                            $fake_row.insertBefore(self.$current.children('[data-id]:nth-child('+(target_row_index+1)+')'));
+                        } else {
+                            if (self.options.editable === 'top') {
+                                $fake_row.insertBefore(
+                                    self.$current.children('[data-id]:first'));
+                            } else {
+                                $fake_row.insertAfter(
+                                    self.$current.children('[data-id]:last'));
+                                var table_bottom_position = self.$current.outerHeight()+self.$current.position().top;
+                                if (!(window.scrollY <= table_bottom_position && table_bottom_position <= window.scrollY+document.body.clientHeight))
+                                    $('body').animate({ scrollTop: table_bottom_position }, 1000);
+                            }
+                        }
+                    } else {
+                        $fake_row.prependTo(self.$current);
+                    }
+                    // if ($last_child.is(':not([data-id])')) {
+                    //     $last_child.html('');
+                    //     $last_child.remove();
+                    // }
+                }
+                // self.edition_form.appendTo();
+                self.edition_form.$element.hide();
+                self.edition_form.$element.parent().css({
+                    'top': $fake_row.position().top,
+                    'left': 0,
                 });
-            },
+                self.dataset.index = null;
+                self.edition_id = null;
+                return self.edition_form.do_show().done(function() {
+                    self.edition_form.$element.show();
+                    $new_row.find('td.oe_form_button').css('display', '');
+                    self.add_save_form_button($new_row);
+                    self.edition_insertion = target_row_index;
+                    self.edition_form.default_fields_vals = self.get_default_fields_values();
+                    // self.edition_form.do_focus_default_field();
+                    if (!!self.edition_form.datarecord.sequence
+                        && !!self.edition_form.dataset.cache
+                        && !!self.edition_form.dataset.cache[0])
+                    {
+                        if (self.edition_insertion==null)
+                        {
+                            with (self.edition_form.fields) {
+                                sequence.$element.find('input').val(
+                                    sequence.value = self.edition_form.datarecord.sequence = _.max(self.edition_form.dataset.cache, function(rec){return rec.values.sequence}).values.sequence+1
+                                );
+                            }
+                        } else {
+                            self.edition_form.fields.sequence.value = self.edition_form.datarecord.sequence = self.edition_form.dataset.cache[target_row_index].values.sequence;
+                        }
+                    }
+                    self.adjust_form_view();
+                    return $.Deferred().resolve();
+                })
+            })
+        },
         handle_onwrite: function (source_record_id) {
             var self = this;
             var on_write_callback = self.view.fields_view.arch.attrs.on_write;
@@ -884,10 +835,6 @@ openerp.web.list_editable = function (openerp) {
                     self.reload_record(record);
                 });
             });
-        },
-        reminder_save: function() {
-            var self = this;
-            this.view.save_reminder = new openerp.web.form.SaveReminder(self.view,self.dataset);
         },
         /**
          * Saves the current row, and returns a Deferred resolving to an object
@@ -917,13 +864,12 @@ openerp.web.list_editable = function (openerp) {
                         self.edition_id = result.result;
                     }
                     var edited_record = self.records.get(self.edition_id);
-                    return $.when(
+                    $.when(
                         self.handle_onwrite(self.edition_id)
-                        ,self.cancel_pending_edition().then(function () {
+                        ,self.reload_edited_record().then(function () {
                             $(self).trigger('saved', [self.dataset]);
                         })
                     ).then(function () {
-                        // self.has_been_saved.resolve();
                             saveDef.resolve({
                                 created: result.created || false,
                                 edited_record: edited_record
@@ -931,6 +877,9 @@ openerp.web.list_editable = function (openerp) {
 
                         });
                 });
+            saveDef.done(function(){
+                self.has_been_saved.resolve();
+            });
             return saveDef.promise();
         },
         /**
@@ -948,13 +897,12 @@ openerp.web.list_editable = function (openerp) {
             return result.promise();
         },
         ensure_saved: function (force) {
-            if (this.edition) {
+            if (this.edition && this.edition_form) {
                 var self = this;
-                var ensDef, d = new $.Deferred();
-                if (!!this.edition_form && this.check_if_changed() && this.edition_form.$element.is('.oe_form_dirty')) {
+                var ensDef;
+                if ( !!this.edition_form && this.edition_form.$element && (this.check_if_changed() || this.edition_form.$element.is('.oe_form_dirty')) ) {
                     if (self.edition_insertion!=null) {
                         ensDef = self.save_row().done(function(res){
-                            // var saved_id = res.created && res.result || res.edited_record.attributes.id;
                             var saved_id = res.edited_record.attributes.id;
                             return self.save_row_at(self.edition_insertion,saved_id)
                         });
@@ -962,23 +910,21 @@ openerp.web.list_editable = function (openerp) {
                         ensDef = self.save_row();
                     }
                 } else {
-                    self.has_been_saved.resolve();
+                    typeof(self.has_been_saved)!='undefined' && self.has_been_saved.resolve();
                     ensDef = $.when();
                 }
-                if (force == false)
-                    ensDef.then(function(){
-                        d.resolve();
-                    });
+                if (!force)
+                {
+                    return ensDef.promise();
+                }
                 else
-                    ensDef.then(function(){
-                        self.cancel_pending_edition().then(function(){
-                            return d.resolve();
-                        });
+                    return ensDef.then(function(){
+                        return self.reload_edited_record();
                     });
-                return d.promise();
             }
+            return $.when();
         },
-        cancel_pending_edition: function (prev_sel_row) {
+        reload_edited_record: function (prev_sel_row) {
             var self = this, reload_record_def = new $.Deferred();
             if (!this.edition) {
                 return $.when();
@@ -988,7 +934,7 @@ openerp.web.list_editable = function (openerp) {
                 }
             if (this.edition_id && this.edition_form) {
                 try {
-                    reload_record_def = this.reload_record(this.records.get(this.edition_id));
+                    reload_record_def = this.reload_record(self.records.get(self.edition_id));
                 } catch(err) {
                     console.warn("Reload record ERROR",err); return $.when();
                 }
@@ -996,12 +942,9 @@ openerp.web.list_editable = function (openerp) {
                 reload_record_def = $.when();
             }
             reload_record_def.done(function () {
-                if (!!self.edition_form && $(self.edition_form.$element.parents()[0]).is('div')==false) {
-                    return self.remove_edition_form();
-                } else {
-                    var def_removed = new $.Deferred();
-                    return def_removed.resolve();
-                }
+                var def_removed = new $.Deferred();
+                // self.$current.find('.oe_fake_list_row').remove();
+                return def_removed.resolve();
             });
             self.pad_table_to(5);
             return reload_record_def.promise();
@@ -1015,7 +958,6 @@ openerp.web.list_editable = function (openerp) {
                 self.edition_form.$element.unbind();
                 self.view.unpad_columns();
                 self.edition_form.stop();
-                self.edition_form.$element.remove();
                 delete self.edition_form;
                 self.dataset.index = null;
                 self.show_edited_row(self.edition_id);
@@ -1041,99 +983,132 @@ openerp.web.list_editable = function (openerp) {
          * Cancels the edition of the row for the current dataset index
          */
         cancel_edition: function () {
-            return this.cancel_pending_edition();
+            return this.reload_edited_record();
         },
         /**
          * Edits record currently selected via dataset
          */
-        cleanup_form_container: function() {
-            var itself = this;
-            if (typeof(itself.edition_form)=='undefined' && itself.$current.parents()[1].getElementsByClassName('form-cont').length>0) {
-                var i=0,
-                    formsparent = itself.$current.parents()[1],
-                    len = itself.$current.parents()[1].getElementsByClassName('form-cont').length;
-                while (i<len) {
-                    formsparent.removeChild(formsparent.getElementsByClassName('form-cont')[i]);
-                    i++;
-                }
-            }
+        _get_current_row: function(rec_id) {
+            return this.$current.find('[data-id=' + (rec_id || this.edition_id) + ']');
         },
         edit_record: function (record_id, event) {
-            var self = this;
-            if (event) {
-                target_field = (event.target.attributes['data-field'] || event.target.parentNode.attributes['data-field'] || event.target.attributes['name']).value;
+            var self = this,
+                target_field;
+            if (event && event.target) {
+                var _selection = window.getSelection();
+                if (
+                    _selection.type === "Range" && _selection.focusNode != null
+                    && _selection.focusNode.parentElement
+                    && self.$current.find(_selection.focusNode.parentElement).length > 0
+                ) {
+                    return;
+                }
+                _selection = null;
+                target_field = event.target.attributes['data-field']
+                    || event.target.parentNode.attributes['data-field']
+                    || event.target.attributes['name']
+                    || target_field.attributes['data-field'];
+                target_field = target_field ? target_field.value : null;
             }
-            var rend = new $.Deferred();
-            // self.cleanup_form_container();
-            self.get_fields_widths();
-            if (this.edition) {
-                if ($(self.edition_form.$element.parents()[0]).is('div')) {
+            var rend = null;
+            var __current_row = this._get_current_row(record_id);
+            if (this.edition_form) {
+                this.edition_form.forbid_focus_default = !!target_field;
+                if (this.complex_dirty_check()) {
                     _.each(self.edition_form.fields,function(f) {
                         if (f.is_dirty() && f.wait_for_onchange) {
                             f.on_ui_change();
                         }
                     });
-                    self.edition_form.do_save().done(function(){
+                    __current_row.show();
+                    rend = self.ensure_saved(true).done(function(){
                         self.show_edited_row();
                         self.reload_record(self.records.get(self.edition_id));
-                        self.start_edition(self.$current.find('[data-id=' + record_id + ']'), target_field);
-                        rend.resolve();
+                        return self.start_edition(__current_row, target_field);
                     });
                 } else {
-                    self.ensure_saved(true).done(function() {
-                        self.render_form(self.$current.find('[data-id=' + record_id + ']'), target_field);
-                        rend.resolve();
-                    });
+                    self.reload_edited_record();
+                    self.has_been_saved.resolve();
+                    rend = self.start_edition(__current_row, target_field);
                 }
-            }
-            else if (!self.edition_form) {
-                var self = this;
-                rend = self.render_form(self.$current.find('[data-id=' + record_id + ']'), target_field);
+            } else if (!this.edition_form) {
+                self.get_fields_widths();
+                rend = self.render_form(__current_row,target_field).then(
+                    function(){
+                        self.edition_form.$element.hide();
+                        return self.start_edition(__current_row, target_field);
+                });
             }
             $.when(self.has_been_saved,rend).done(function() {
+                self.edition_form.$element.hide();
+                self.edition_form.$element.find('button.oe-edit-row-save').css('display','none');
                 self.$current.find('tr.selected').removeClass('selected');
-                self.$current.find('tr[data-id="'+record_id+'"]').addClass('selected');
-                self.adjust_form_view();
+                __current_row.addClass('selected');
                 self.edition_form.default_fields_vals = self.get_default_fields_values();
                 self.view.do_select([record_id],[self.records.get(record_id).attributes]);
-                if (!self.view.dataset.parent_view || self.view.dataset.parent_view.fields_view.type != 'form') {
-                    self.add_save_form_button(self.edition_form.$element[0]);
-                }
+                setTimeout(function(){
+                    self.re_adjust_edition_form();
+                    self.edition_form.$element.show().find('[name="' + target_field + '"]').focus().select();
+                },500);
+                self.has_been_saved = new $.Deferred();
                 $(self).trigger(
                     'edit',
                     [record_id, self.dataset]);
                 return;
             });
         },
+        remove_fake_row: function() {
+            this.$current.find('tr.oe_fake_list_row').html('').remove();
+        },
+        complex_dirty_check: function() {
+            return (this.edition_form.is_dirty() || this.check_if_changed()) && !this.check_required_fields_empty();
+        },
         new_record: function (row_index) {
             var self = this;
             var ens = new $.Deferred(),
                 row_index = row_index;
             if (!self.field_width) self.get_fields_widths();
-            if (self.edition) {
-                var edit_id = self.edition_id;
-                self.edition_form.$element.unbind();
-                self.has_been_saved.done(function() {
-                    self.ensure_saved(true).done(function() {
-                        if (self.edition_form && $(self.edition_form.$element.parents()[0]).is('div')) {
-                            $.when(self.cancel_pending_edition(),self.remove_edition_form()).then(function(){
-                                // self.remove_edition_form().then(function() {
-                                    self.refresh_zebra();
-                                    ens.resolve();
-                                // });
-                            })
-                        } else {
-                            ens.resolve();
-                        }
-                    })
+            this.edition_insertion = row_index;
+            this.$current.find('tr[data-id].selected').removeClass('selected');
+            if (this.edition_form) {
+                // if current for is dirty --> save it and reload the saved record, clear edtion form
+                var __dirty = this.complex_dirty_check();
+                this.edition_form.forbid_focus_default = null;
+                if (__dirty)
+                {
+                    $.when(
+                        self.ensure_saved(true),
+                        self.has_been_saved
+                        ).done(function() {
+                            self.remove_fake_row();
+                            self.show_edited_row(self.edition_id);
+                            self.refresh_zebra();
+                            ens = self.make_empty_form(null,row_index);
+                            self.edition_form.$element.find('button.oe-edit-row-save').css('display','initial');
+                    });
+                } else {
+                    $.when(
+                        self.reload_edited_record(),
+                        self.remove_fake_row(),
+                        self.make_empty_form(null,row_index)
+                            ).done(function(){
+                                self.edition_form.$element.find('button.oe-edit-row-save').css('display','initial');
+                                ens.resolve();
+                    });
                 }
-                );
             } else {
-                ens.resolve();
+                // edition form doesn't exist ----> render one
+                ens = $.when(self.render_form(),self.make_empty_form(null,row_index));
             }
             ens.done(function(){
+                self.add_link_create_line();
+                self.edition_form.$element.show();
+                self.edition_form.forbid_focus_default = null;
+                setTimeout(function() {
+                    self.edition_form.do_focus_default_field();
+                    self.re_adjust_edition_form();
+                }, 0);
                 self.has_been_saved = new $.Deferred();
-                self.make_empty_form(null,row_index);
             });
             return ens;
         },
@@ -1199,6 +1174,10 @@ openerp.web.list_editable = function (openerp) {
         _render_and_insert: function () {
             return this.start();
         },
+        start: function() {
+            this._super();
+            if (!!this.dataset.parent_view) this.dataset.parent_view.default_focus_field = null;
+        },
         reasign_set_value_functions: function() {
             var self = this;
             _.each(_.values(self.widgets), function(widget) {
@@ -1223,5 +1202,23 @@ openerp.web.list_editable = function (openerp) {
             }
             return result;
          },
+        do_focus_default_field: function() {
+            var self = this;
+            if (this.dataset.index === null) {
+                if (!!self.default_focus_field && !self.forbid_focus_default) {
+                    if (this.default_focus_field.invisible == true)
+                        self.default_focus_field = self.fields[_.find(self.fields_order, function(fn) { return self.fields[fn].node.attrs.invisible != true;})];
+                    self.default_focus_field.focus();
+                }
+            }
+        },
+        stop: function() {
+            var __parent_list = this.widget_parent.groups.children[null];
+            if (!!__parent_list) {
+                __parent_list.edition_id = null;
+                __parent_list.edition = null;
+                __parent_list.edition_form = null;
+            }
+            this._super();
+        },
     });
-};

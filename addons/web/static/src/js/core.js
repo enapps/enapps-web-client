@@ -15,7 +15,7 @@ if (!console.debug) {
     console.debug = console.log;
 }
 
-openerp.web.core = function(openerp) {
+openerp.web.core = {};
 /**
  * John Resig Class with factory improvement
  */
@@ -279,6 +279,7 @@ openerp.web.Registry = openerp.web.Class.extend( /** @lends openerp.web.Registry
                 return this.parent.get_object(key, silent_error);
             }
             if (silent_error) { return void 'nooo'; }
+            if (key == "default_home") return;
             throw new openerp.web.KeyNotFound(key);
         }
 
@@ -825,10 +826,14 @@ openerp.web.Connection = openerp.web.CallbackEnabled.extend( /** @lends openerp.
             var mod = this.module_list[j];
             if(this.module_loaded[mod])
                 continue;
-            openerp[mod] = {};
             // init module mod
-            if(openerp._openerp[mod] != undefined) {
-                openerp._openerp[mod](openerp);
+            var fct = openerp[mod];
+            if(typeof(fct) === "function") {
+                openerp[mod] = {};
+                for (var k in fct) {
+                    openerp[mod][k] = fct[k];
+                }
+                fct(openerp, openerp[mod]);
                 this.module_loaded[mod] = true;
             }
         }
@@ -869,12 +874,19 @@ openerp.web.Connection = openerp.web.CallbackEnabled.extend( /** @lends openerp.
 
         var $form, $form_data = $('<div>');
 
-        var complete = function () {
+        var complete = function (msec) {
             if (options.complete) { options.complete(); }
             clearTimeout(timer);
-            $form_data.remove();
-            $target.remove();
-            if (remove_form && $form) { $form.remove(); }
+            var _remove_form = function(){
+                $form_data.remove();
+                $target.remove();
+                if (remove_form && $form) { $form.remove(); }
+            };
+            if (msec && msec!==false) {
+                setTimeout(function() { _remove_form(); },msec);
+            } else {
+                _remove_form();
+            }
         };
         var $target = $('<iframe style="display: none;">')
             .attr({id: id, name: id})
@@ -919,7 +931,7 @@ openerp.web.Connection = openerp.web.CallbackEnabled.extend( /** @lends openerp.
         if (options.success) { options.success(); }
         if (remove_form)
             setTimeout(function(){
-                complete();
+                complete(500);
             },500);
         else
             complete();
@@ -1024,6 +1036,15 @@ openerp.web.Widget = openerp.web.CallbackEnabled.extend(/** @lends openerp.web.W
         // useful to know if the widget was destroyed and should not be used anymore
         this.widget_is_stopped = false;
     },
+    get_parent: function(instanceType) {
+        var parent = this.widget_parent;
+        if (instanceType == false && typeof(instanceType) !== "string" && instanceType.indexOf('openerp.web') == 0) {
+            while (!(parent instanceof eval(instanceType))) {
+                parent = parent.get_parent(instanceType);
+            }
+        }
+        return parent;
+    },
     /**
      * Renders the current widget and appends it to the given jQuery object or Widget.
      *
@@ -1110,6 +1131,11 @@ openerp.web.Widget = openerp.web.CallbackEnabled.extend(/** @lends openerp.web.W
             return openerp.web.qweb.render(this.template, _.extend({widget: this}, additional || {}));
         return null;
     },
+    get_element: function(selector) {
+        if (selector === undefined)
+            return this.$element;
+        return this.$element.find(selector);
+    },
     /**
      * Method called after rendering. Mostly used to bind actions, perform asynchronous
      * calls, etc...
@@ -1126,11 +1152,21 @@ openerp.web.Widget = openerp.web.CallbackEnabled.extend(/** @lends openerp.web.W
      * Destroys the current widget, also destroys all its children before destroying itself.
      */
     stop: function() {
-        _.each(_.clone(this.widget_children), function(el) {
+        var __children = _.clone(this.widget_children);
+        _.each(__children, function(el) {
             el.stop();
         });
-        if(this.$element != null) {
-            this.$element.remove();
+        this.widget_children = [];
+        __children = null; delete __children;
+        if(this.$element) {
+            _.each(this.$element,function(el) {
+                typeof(el.remove) == 'function' && el.remove();
+            });
+            this.$element = null; delete this.$element;
+        }
+        if (this.dataset && this.dataset.$element) {
+            this.dataset.$element.removeData().remove();
+            this.dataset.$element = null;
         }
         if (this.widget_parent && this.widget_parent.widget_children) {
             this.widget_parent.widget_children = _.without(this.widget_parent.widget_children, this);
@@ -1356,8 +1392,6 @@ $.async_when = function() {
         return $.when.apply(this, arguments);
     else
         return old_async_when.apply(this, arguments);
-};
-
 };
 
 // vim:et fdc=0 fdl=0 foldnestmax=3 fdm=syntax:

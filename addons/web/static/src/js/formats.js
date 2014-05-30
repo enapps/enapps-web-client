@@ -1,5 +1,5 @@
 
-openerp.web.formats = function(openerp) {
+openerp.web.formats = {};
 var _t = openerp.web._t;
 var QWeb = openerp.web.qweb;
 /**
@@ -186,6 +186,7 @@ openerp.web.parse_value = function (value, descriptor, value_if_empty) {
                 throw new Error(value + " is not a correct integer");
             return tmp;
         case 'float':
+            if (value === "-") value = 0;
             var tmp = Number(value);
             if (!isNaN(tmp))
                 return tmp;
@@ -347,5 +348,3 @@ openerp.web.format_cell = function (row_data, column, options) {
     return _.escape(openerp.web.format_value(
             row_data[column.id].value, column, options.value_if_empty));
 }
-
-};

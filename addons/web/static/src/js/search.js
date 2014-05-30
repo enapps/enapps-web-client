@@ -1,4 +1,4 @@
-openerp.web.search = function(openerp) {
+openerp.web.search = {};
 var QWeb = openerp.web.qweb,
       _t =  openerp.web._t,
      _lt = openerp.web._lt;
@@ -354,10 +354,13 @@ openerp.web.SearchView = openerp.web.OldWidget.extend(/** @lends openerp.web.Sea
         this.$element.find(".oe_search-view-filters-management")[0].selectedIndex = 0;
         var self = this,
             menu = openerp.webclient.menu,
-            $dialog = $(QWeb.render("SearchView.add_to_dashboard", {
+            _rendered = QWeb.render("SearchView.add_to_dashboard", {
                 dashboards : menu.data.data.children,
                 selected_menu_id : menu.$element.find('a.active').data('menu')
-            }));
+            }),
+            $dialog = $(_rendered);
+        _rendered = null; delete _rendered;
+        delete menu;
         $dialog.find('input').val(this.fields_view.name);
         $dialog.dialog({
             modal: true,
@@ -830,6 +833,7 @@ openerp.web.search.Field = openerp.web.search.Input.extend( /** @lends openerp.w
     init: function (view_section, field, view) {
 
         this._super(view);
+        this.default_operator = field.name_search_operator || this.default_operator;
         this.load_attrs(_.extend({}, field, view_section.attrs));
         this.filters = new openerp.web.search.FilterGroup(_.compact(_.map(
             view_section.children, function (filter_node) {
@@ -1128,6 +1132,11 @@ openerp.web.search.DateField = openerp.web.search.Field.extend(/** @lends opener
         this.datewidget2.set_value(this.defaults[this.attrs.name] || false);
         this.$element.closest('td.oe_searchview_field').css({'border': '1px dashed #808080','border-radius': '5px','padding-bottom': '0px', 'margin-top':'-2px'});
     },
+    stop: function() {
+        this.datewidget.stop();
+        this.datewidget2.stop();
+        this._super();
+    },
     get_value: function () {
         return this.datewidget.get_value() || null;
     },
@@ -1248,6 +1257,7 @@ openerp.web.search.ManyToOneField = openerp.web.search.CharField.extend({
                 self.id = ui.item.id;
                 self.name = ui.item.label;
             },
+            appendTo: self.view.$element,
             delay: 0
         })
     },
@@ -1311,7 +1321,8 @@ openerp.web.search.ExtendedSearch = openerp.web.search.Input.extend({
                 }
             }
             openerp.web.search.add_expand_listener(self.$element);
-            self.$element.find('.searchview_extended_add_group').click(function (e) {
+            self.$element.delegate('.searchview_extended_add_group', 'click', function (e) {
+                e.stopImmediatePropagetion();
                 self.add_group();
             });
         });
@@ -1637,8 +1648,8 @@ openerp.web.search.ExtendedSearchProposition.Selection = openerp.web.search.Exte
 openerp.web.search.ExtendedSearchProposition.Boolean = openerp.web.search.ExtendedSearchProposition.Field.extend({
     template: 'SearchView.extended_search.proposition.boolean',
     operators: [
-        {value: "=", text: _lt("is true")},
-        {value: "!=", text: _lt("is false")}
+        {value: "is", text: _lt("is true")},
+        {value: "is not", text: _lt("is false")}
     ],
     get_value: function() {
         return true;
@@ -1661,7 +1672,4 @@ openerp.web.search.custom_filters = new openerp.web.Registry({
 
     'id': 'openerp.web.search.ExtendedSearchProposition.Id'
 });
-
-};
-
 // vim:et fdc=0 fdl=0 foldnestmax=3 fdm=syntax:

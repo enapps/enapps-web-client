@@ -1,4 +1,7 @@
 <template>
     <div t-name="GraphView" t-att-id="element_id+'-'+chart+'chart'"
-         style="height:300px;position:relative;"/>
+         style="height:700px;position:relative;">
+         <svg>
+         </svg>
+    </div>
 </template>

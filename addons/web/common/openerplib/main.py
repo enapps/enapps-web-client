@@ -5,16 +5,16 @@
 # Copyright (C) 2011 Nicolas Vanhoren
 # Copyright (C) 2011 OpenERP s.a. (<http://openerp.com>).
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met: 
-# 
+# modification, are permitted provided that the following conditions are met:
+#
 # 1. Redistributions of source code must retain the above copyright notice, this
-# list of conditions and the following disclaimer. 
+# list of conditions and the following disclaimer.
 # 2. Redistributions in binary form must reproduce the above copyright notice,
 # this list of conditions and the following disclaimer in the documentation
-# and/or other materials provided with the distribution. 
-# 
+# and/or other materials provided with the distribution.
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 # ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 # WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -25,7 +25,7 @@
 # ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-# 
+#
 ##############################################################################
 
 """
@@ -63,7 +63,7 @@ class XmlRPCConnector(Connector):
     A type of connector that uses the XMLRPC protocol.
     """
     PROTOCOL = 'xmlrpc'
-    
+
     __logger = _getChildLogger(_logger, 'connector.xmlrpc')
 
     def __init__(self, hostname, port=8069):
@@ -103,7 +103,7 @@ class Service(object):
         self.connector = connector
         self.service_name = service_name
         self.__logger = _getChildLogger(_getChildLogger(_logger, 'service'),service_name or "")
-        
+
     def __getattr__(self, method):
         """
         :param method: The name of the method to execute on the service.
@@ -161,7 +161,7 @@ class Connection(object):
         self.database, self.login, self.password = database, login, password
 
         self.user_id = user_id
-        
+
     def check_login(self, force=True):
         """
         Checks that the login information is valid. Throws an AuthenticationError if the
@@ -172,7 +172,6 @@ class Connection(object):
         """
         if self.user_id and not force:
             return
-        
         if not self.database or not self.login or self.password is None:
             raise AuthenticationError("Credentials not provided")
 
@@ -181,7 +180,7 @@ class Connection(object):
         if not self.user_id:
             raise AuthenticationError("Authentication failure")
         self.__logger.debug("Authenticated with user id %s", self.user_id)
-        
+
     def get_user_context(self):
         """
         Query the default context of the user.
@@ -189,7 +188,7 @@ class Connection(object):
         if not self.user_context:
             self.user_context = self.get_model('res.users').context_get()
         return self.user_context
-    
+
     def get_model(self, model_name):
         """
         Returns a Model instance to allow easy remote manipulation of an OpenERP model.
@@ -247,7 +246,7 @@ class Model(object):
                                                     self.connection.password,
                                                     self.model_name,
                                                     method,
-                                                    args, kw)
+                                                    *args, **kw)
             if method == "read":
                 if isinstance(result, list) and len(result) > 0 and "id" in result[0]:
                     index = {}
@@ -308,4 +307,4 @@ def get_connection(hostname=None, protocol="xmlrpc", port='auto', database=None,
     already know it, in most cases you don't need to specify it.
     """
     return Connection(get_connector(hostname, protocol, port), database, login, password, user_id)
-        
+

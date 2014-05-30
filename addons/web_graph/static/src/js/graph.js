@@ -33,12 +33,6 @@ openerp.web_graph.GraphView = openerp.web.View.extend({
 
         this.renderer = null;
     },
-    stop: function () {
-        if (this.renderer) {
-            clearTimeout(this.renderer);
-        }
-        this._super();
-    },
     start: function() {
         var self = this;
         this._super();
@@ -61,6 +55,12 @@ openerp.web_graph.GraphView = openerp.web.View.extend({
                 self.on_loaded(self.fields_view);
             });
     },
+    stop: function () {
+        if (this.renderer) {
+            clearTimeout(this.renderer);
+        }
+        this._super();
+    },
     /**
      * Returns all object fields involved in the graph view
      */
@@ -70,6 +70,9 @@ openerp.web_graph.GraphView = openerp.web.View.extend({
         if (this.group_field) {
             fs.push(this.group_field);
         }
+        // var _original = _.difference(this.groupby, fs);
+        // fs = _original.concat(this.groupby);
+        // fs = fs.concat(this.groupby);
         return _.uniq(fs);
     },
     on_loaded: function() {
@@ -99,297 +102,189 @@ openerp.web_graph.GraphView = openerp.web.View.extend({
             "chart": this.chart,
             'element_id': this.widget_parent.element_id
         }));
-
+        this.width = this.$element.width();
+        this.height = Math.min(document.documentElement.clientHeight - this.$element.position().top - 200);
+        this.svg = this.$element.find('#'+self.widget_parent.element_id+'-'+self.chart+'chart svg')[0];
         var fields = _(this.columns).pluck('name').concat([this.abscissa]);
         if (this.group_field) { fields.push(this.group_field); }
         // transform search result into usable records (convert from OpenERP
         // value shapes to usable atomic types
-        var records = _(results).map(function (result) {
-            var point = {};
-            _(result).each(function (value, field) {
-                if (!_(fields).contains(field)) { return; }
-                if (value === false) { point[field] = false; return; }
-                switch (self.fields[field].type) {
-                case 'selection':
-                    point[field] = _(self.fields[field].selection).detect(function (choice) {
-                        return choice[0] === value;
-                    })[1];
-                    break;
-                case 'many2one':
-                    point[field] = value[1];
-                    break;
-                case 'integer': case 'float': case 'char':
-                case 'date': case 'datetime':
-                    point[field] = value;
-                    break;
-                default:
-                    throw new Error(
-                        "Unknown field type " + self.fields[field].type
-                        + "for field " + field + " (" + value + ")");
-                }
-            });
-            return point;
-        });
-        // aggregate data, because dhtmlx is crap. Aggregate on abscissa field,
-        // leave split on group field => max m*n records where m is the # of
-        // values for the abscissa and n is the # of values for the group field
+
         var graph_data = [];
-        _(records).each(function (record) {
-            var abscissa = record[self.abscissa],
-                group = record[self.group_field];
-            var r = _(graph_data).detect(function (potential) {
-                return potential[self.abscissa] === abscissa
-                        && (!self.group_field
-                            || potential[self.group_field] === group);
-            });
-            var datapoint = r || {};
 
-            datapoint[self.abscissa] = abscissa;
-            if (self.group_field) { datapoint[self.group_field] = group; }
-            _(self.columns).each(function (column) {
-                var val = record[column.name],
-                    aggregate = datapoint[column.name];
-                switch(column.operator) {
-                case '+':
-                    datapoint[column.name] = (aggregate || 0) + val;
-                    return;
-                case '*':
-                    datapoint[column.name] = (aggregate || 1) * val;
-                    return;
-                case 'min':
-                    datapoint[column.name] = (aggregate || Infinity) > val
-                                           ? val
-                                           : aggregate;
-                    return;
-                case 'max':
-                    datapoint[column.name] = (aggregate || -Infinity) < val
-                                           ? val
-                                           : aggregate;
-                }
-            });
-
-            if (!r) { graph_data.push(datapoint); }
-        });
-        graph_data = _(graph_data).sortBy(function (point) {
-            return point[self.abscissa] + '[[--]]' + point[self.group_field];
-        });
-        if (_.include(['bar','line','area'],this.chart)) {
-            return this.schedule_bar_line_area(graph_data);
-        } else if (this.chart == "pie") {
-            return this.schedule_pie(graph_data);
-        }
-    },
-    schedule_bar_line_area: function(results) {
-        var self = this;
-        var group_list,
-        view_chart = (self.chart == 'line')?'line':(self.chart == 'area')?'area':'';
-        if (!this.group_field || !results.length) {
-            if (self.chart == 'bar'){
-                view_chart = (this.orientation === 'horizontal') ? 'barH' : 'bar';
-            }
-            group_list = _(this.columns).map(function (column, index) {
-                return {
-                    group: column.name,
-                    text: self.fields[column.name].string,
-                    color: COLOR_PALETTE[index % (COLOR_PALETTE.length)]
-                }
-            });
-        } else {
-            // dhtmlx handles clustered bar charts (> 1 column per abscissa
-            // value) and stacked bar charts (basically the same but with the
-            // columns on top of one another instead of side by side), but it
-            // does not handle clustered stacked bar charts
-            if (self.chart == 'bar' && (this.columns.length > 1)) {
-                this.$element.text(
-                    'OpenERP Web does not support combining grouping and '
-                  + 'multiple columns in graph at this time.');
-                throw new Error(
-                    'dhtmlx can not handle columns counts of that magnitude');
-            }
-            // transform series for clustered charts into series for stacked
-            // charts
-            if (self.chart == 'bar'){
-                view_chart = (this.orientation === 'horizontal')
-                        ? 'stackedBarH' : 'stackedBar';
-            }
-            group_list = _(results).chain()
-                    .pluck(this.group_field)
-                    .uniq()
-                    .map(function (value, index) {
-                        var groupval = '';
-                        if(value) {
-                            groupval = value.toLowerCase().replace(/[\s\/]+/g,'_');
-                        }
-                        return {
-                            group: _.str.sprintf('%s_%s', self.ordinate, groupval),
-                            text: value,
-                            color: COLOR_PALETTE[index % COLOR_PALETTE.length]
-                        };
-                    }).value();
-
-            results = _(results).chain()
-                .groupBy(function (record) { return record[self.abscissa]; })
-                .map(function (records) {
-                    var r = {};
-                    // second argument is coerced to a str, no good for boolean
-                    r[self.abscissa] = records[0][self.abscissa];
-                    _(records).each(function (record) {
-                        var value = record[self.group_field];
-                        if(value) {
-                            value = value.toLowerCase().replace(/[\s\/]+/g,'_');
-                        }
-                        var key = _.str.sprintf('%s_%s', self.ordinate, value);
-                        r[key] = record[self.ordinate];
-                    });
-                    return r;
-                })
-                .value();
-        }
-        var abscissa_description = {
-            title: "<b>" + this.fields[this.abscissa].string + "</b>",
-            template: function (obj) {
-                return obj[self.abscissa] || 'Undefined';
-            }
-        };
-        var ordinate_description = {
-            lines: true,
-            title: "<b>" + this.fields[this.ordinate].string + "</b>"
-        };
-
-        var x_axis, y_axis;
-        if (self.chart == 'bar' && self.orientation == 'horizontal') {
-            x_axis = ordinate_description;
-            y_axis = abscissa_description;
-        } else {
-            x_axis = abscissa_description;
-            y_axis = ordinate_description;
-        }
-        var renderer = function () {
-            if (self.$element.is(':hidden')) {
-                self.renderer = setTimeout(renderer, 100);
-                return;
-            }
-            self.renderer = null;
-            var charts = new dhtmlXChart({
-                view: view_chart,
-                container: self.widget_parent.element_id+"-"+self.chart+"chart",
-                value:"#"+group_list[0].group+"#",
-                gradient: (self.chart == "bar") ? "3d" : "light",
-                alpha: (self.chart == "area") ? 0.6 : 1,
-                border: false,
-                width: 1024,
-                tooltip:{
-                    template: _.str.sprintf("#%s#, %s=#%s#",
-                        self.abscissa, group_list[0].text, group_list[0].group)
-                },
-                radius: 0,
-                color: (self.chart != "line") ? group_list[0].color : "",
-                item: (self.chart == "line") ? {
-                            borderColor: group_list[0].color,
-                            color: "#000000"
-                        } : "",
-                line: (self.chart == "line") ? {
-                            color: group_list[0].color,
-                            width: 3
-                        } : "",
-                origin:0,
-                xAxis: x_axis,
-                yAxis: y_axis,
-                padding: {
-                    left: 75
-                },
-                legend: {
-                    values: group_list,
-                    align:"left",
-                    valign:"top",
-                    layout: "x",
-                    marker: {
-                        type:"round",
-                        width:12
+        if (this.groupby.length < 2 || this.chart == "pie") {
+            var records = _(results).map(function (result) {
+                var point = {};
+                _(result).each(function (value, field) {
+                    if (!_(fields).contains(field)) { return; }
+                    if (value === false) { point[field] = false; return; }
+                    switch (self.fields[field].type) {
+                    case 'selection':
+                        point[field] = _(self.fields[field].selection).detect(function (choice) {
+                            return choice[0] === value;
+                        })[1];
+                        break;
+                    case 'many2one':
+                        point[field] = value[1];
+                        break;
+                    case 'integer': case 'float': case 'char':
+                    case 'date': case 'datetime':
+                        point[field] = value;
+                        break;
+                    default:
+                        throw new Error(
+                            "Unknown field type " + self.fields[field].type
+                            + "for field " + field + " (" + value + ")");
                     }
-                }
-            });
-            self.$element.find("#"+self.widget_parent.element_id+"-"+self.chart+"chart").width(
-                self.$element.find("#"+self.widget_parent.element_id+"-"+self.chart+"chart").width()+120);
-
-            for (var m = 1; m<group_list.length;m++){
-                var column = group_list[m];
-                if (column.group === self.group_field) { continue; }
-                charts.addSeries({
-                    value: "#"+column.group+"#",
-                    tooltip:{
-                        template: _.str.sprintf("#%s#, %s=#%s#",
-                            self.abscissa, column.text, column.group)
-                    },
-                    color: (self.chart != "line") ? column.color : "",
-                    item: (self.chart == "line") ? {
-                            borderColor: column.color,
-                            color: "#000000"
-                        } : "",
-                    line: (self.chart == "line") ? {
-                            color: column.color,
-                            width: 3
-                        } : ""
                 });
-            }
-            charts.parse(results, "json");
-            self.$element.find("#"+self.widget_parent.element_id+"-"+self.chart+"chart").height(
-                self.$element.find("#"+self.widget_parent.element_id+"-"+self.chart+"chart").height()+50);
-            charts.attachEvent("onItemClick", function(id) {
-                self.open_list_view(charts.get(id));
+                return point;
             });
-        };
-        if (this.renderer) {
-            clearTimeout(this.renderer);
-        }
-        this.renderer = setTimeout(renderer, 0);
-    },
-    schedule_pie: function(result) {
-        var self = this;
-        var renderer = function () {
-            if (self.$element.is(':hidden')) {
-                self.renderer = setTimeout(renderer, 100);
-                return;
-            }
-            self.renderer = null;
-            var chart =  new dhtmlXChart({
-                view:"pie3D",
-                container:self.widget_parent.element_id+"-piechart",
-                value:"#"+self.ordinate+"#",
-                pieInnerText:function(obj) {
-                    var sum = chart.sum("#"+self.ordinate+"#");
-                    var val = obj[self.ordinate] / sum * 100 ;
-                    return val.toFixed(1) + "%";
-                },
-                tooltip:{
-                    template:"#"+self.abscissa+"#"+"="+"#"+self.ordinate+"#"
-                },
-                gradient:"3d",
-                height: 20,
-                radius: 200,
-                legend: {
-                    width: 300,
-                    align:"left",
-                    valign:"top",
-                    layout: "x",
-                    marker:{
-                        type:"round",
-                        width:12
-                    },
-                    template:function(obj){
-                        return obj[self.abscissa] || 'Undefined';
+            // aggregate data, because dhtmlx is crap. Aggregate on abscissa field,
+            // leave split on group field => max m*n records where m is the # of
+            // values for the abscissa and n is the # of values for the group field
+            _(records).each(function (record) {
+                var abscissa = record[self.abscissa],
+                    group = record[self.group_field];
+                var r = _(graph_data).detect(function (potential) {
+                    return potential[self.abscissa] === abscissa
+                            && (!self.group_field
+                                || potential[self.group_field] === group);
+                });
+                var datapoint = r || {};
+
+                datapoint[self.abscissa] = abscissa;
+                if (self.group_field) { datapoint[self.group_field] = group; }
+                _(self.columns).each(function (column) {
+                    var val = record[column.name],
+                        aggregate = datapoint[column.name];
+                    switch(column.operator) {
+                    case '+':
+                        datapoint[column.name] = (aggregate || 0) + val;
+                        return;
+                    case '*':
+                        datapoint[column.name] = (aggregate || 1) * val;
+                        return;
+                    case 'min':
+                        datapoint[column.name] = (aggregate || Infinity) > val
+                                               ? val
+                                               : aggregate;
+                        return;
+                    case 'max':
+                        datapoint[column.name] = (aggregate || -Infinity) < val
+                                               ? val
+                                               : aggregate;
                     }
-                }
+                });
+
+                if (!r) { graph_data.push(datapoint); }
             });
-            chart.parse(result,"json");
-            chart.attachEvent("onItemClick", function(id) {
-                self.open_list_view(chart.get(id));
+            graph_data = _(graph_data).sortBy(function (point) {
+                return point[self.abscissa] + '[[--]]' + point[self.group_field];
             });
-        };
-        if (this.renderer) {
-            clearTimeout(this.renderer);
+            if (this.chart != "pie")
+                graph_data = [{
+                    'key': self.options.action.name,
+                    'values': graph_data
+                }];
+        } else {
+        //  start of a new grouping function
+            var level_1 = _.unique(_.pluck(results, self.groupby[0]),function(el) { return el[0]; }),
+                level_2 = _.unique(_.pluck(results, self.groupby[1]),function(el) { return el[0]; });
+                __get_name = function (obj) {
+                    if (typeof(obj) == "object")
+                        return _.find(obj, function(el) { return typeof(el) == 'string' }) || "";
+                    else if (typeof(obj) != "string")
+                        return obj.toString();
+                    else
+                        return obj;
+                };
+            _.each(level_2, function(dim2) {
+                var _temp = [];
+                _.each(level_1, function (dim1) {
+                    var __y = _(_.filter(results, function (rec) {
+                        if (_.isEqual(rec[self.groupby[0]], dim1) && _.isEqual(rec[self.groupby[1]], dim2)) {
+                            return rec;
+                        }
+                    })).pluck(self.ordinate);
+                    var _sum = _.reduce(__y, function(memo, num){ return memo + num; }, 0);
+                    _temp.push({ 'x': __get_name(dim1), 'y': _sum });
+                })
+                graph_data.push({'key': __get_name(dim2), 'values': _temp });
+            });
         }
-        this.renderer = setTimeout(renderer, 0);
+
+        if (_.include(['bar','line','area'],this.chart)) {
+            return this.bar_chart(graph_data);
+        } else if (this.chart == "pie") {
+            return this.pie_chart(graph_data);
+        }
+    },
+    bar_chart: function(data){
+        var self = this;
+        nv.addGraph(function () {
+            var chart = nv.models.multiBarChart()
+                .width(self.width)
+                .height(self.height)
+                .reduceXTicks(false)
+                .stacked(self.groupby == false)
+                .showControls(self.groupby != false)
+                ;
+            if (self.groupby.length < 2) {
+                chart.x(function(d) { return d[self.abscissa] }).y(function(d) { return d[self.ordinate] });
+            }
+            if (self.width / data[0].values.length < 80) {
+                chart.rotateLabels(-15);
+                chart.reduceXTicks(true);
+                chart.margin({bottom:40});
+            }
+            d3.select(self.svg)
+                .datum(data)
+                .attr('width', self.width)
+                .attr('height', self.height)
+                .call(chart);
+            nv.utils.windowResize(chart.update);
+            return chart;
+        });
+    },
+
+    pie_chart: function(data) {
+        var self = this;
+        if (data.length > 10) {
+            var new_data = [];
+            while (new_data.length <= 10) {
+                var _max = _.max(data, function(rec) { return rec[self.ordinate]; });
+                if ( new_data.indexOf(_max)<0 ) {
+                    new_data.push(_max);
+                    data = _.without(data,_max);
+                }
+            }
+            data = new_data;
+            var __extra = {};
+            var _other_abscissa = self.abscissa;
+            var _other_ordinate = self.ordinate;
+            var _other_ordinate_total = _.reduce(data, function(memo, num) { return memo + num[self.ordinate]; }, 0 );
+            __extra[_other_abscissa] = 'Other';
+            __extra[_other_ordinate] = _other_ordinate_total;
+            data.push(__extra);
+        }
+        nv.addGraph(function () {
+            var chart = nv.models.pieChart()
+                .x(function(d) { return d[self.abscissa] })
+                .y(function(d) { return d[self.ordinate] })
+                .showLabels(true)
+                .color(d3.scale.category20b().range())
+                // .width(self.width)
+                // .height(self.height);
+              ;
+            d3.select(self.svg)
+                .datum(data)
+                .transition().duration(1200)
+                // .attr('width', self.width)
+                // .attr('height', self.height)
+                .call(chart);
+            nv.utils.windowResize(chart.update);
+            return chart;
+        });
     },
     open_list_view : function (id){
         var self = this;
@@ -429,13 +324,15 @@ openerp.web_graph.GraphView = openerp.web.View.extend({
     do_search: function(domain, context, group_by) {
         var self = this;
         return $.when(this.is_loaded).pipe(function() {
+            self.groupby = [];
             // TODO: handle non-empty group_by with read_group?
             if (!_(group_by).isEmpty()) {
                 self.abscissa = group_by[0];
+                self.groupby = group_by;
             } else {
                 self.abscissa = self.first_field;
             }
-            return self.dataset.read_slice(self.list_fields()).then($.proxy(self, 'schedule_chart'));
+            return self.dataset.read_slice((_.difference(self.list_fields(),self.groupby)).concat(self.groupby)).then($.proxy(self, 'schedule_chart'));
         });
     },
 

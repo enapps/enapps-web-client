@@ -1,4 +1,4 @@
-openerp.web_dashboard = function(openerp) {
+openerp.web_dashboard = {};
 var QWeb = openerp.web.qweb,
     _t = openerp.web._t;
 
@@ -469,5 +469,3 @@ openerp.web_dashboard.ApplicationInstaller = openerp.web.OldWidget.extend({
     }
 });
 
-
-};

@@ -2,7 +2,7 @@
  * OpenERP Web Mobile chrome
  *---------------------------------------------------------*/
 
-openerp.web_mobile.chrome_mobile = function(openerp) {
+openerp.web_mobile.chrome_mobile = {};
 
 openerp.web_mobile.mobilewebclient = function(element_id) {
     // TODO Helper to start mobile webclient rename it openerp.web.webclient
@@ -293,5 +293,3 @@ openerp.web_mobile.Options =  openerp.web.OldWidget.extend({
         $.mobile.changePage("#oe_options", 'slideup', false, true);
     }
 });
-
-};

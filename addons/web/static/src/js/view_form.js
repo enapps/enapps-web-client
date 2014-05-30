@@ -1,4 +1,4 @@
-openerp.web.form = function (openerp) {
+openerp.web.form = {};
 
 var _t = openerp.web._t,
    _lt = openerp.web._lt;
@@ -98,9 +98,11 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
     start: function() {
         this._super();
         if (edited_tabs.length!==0) {this.confirm_reload()}
+        var self = this;
         return this.init_view();
     },
     init_view: function() {
+        var self = this;
         this.remove_from_confirm_reload();
         if (this.embedded_view) {
             var def = $.Deferred();
@@ -115,7 +117,8 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
                 "view_id": this.view_id,
                 "view_type": "form",
                 toolbar: this.options.sidebar,
-                context: context
+                context: context,
+                action_id: self.widget_parent && self.widget_parent.action && self.widget_parent.action.id,
                 }, this.on_loaded);
         }
     },
@@ -124,11 +127,16 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
             this.sidebar.attachments.stop();
             this.sidebar.stop();
         }
-        _.each(this.widgets, function(w) {
-            $(w).unbind('.formBlur');
-            w.stop();
-        });
+        // _.each(this.widgets, function(w) {
+        //     // $(w).unbind('.formBlur');
+        //     w.stop();
+        // });
         this.$element.unbind('.formBlur');
+        if (this.$form_header && !!this.$form_header[0]) {
+            this.$form_header[0].remove();
+        }
+        this.$form_header = null;
+        delete this.$form_header;
         this._super();
     },
     reposition: function ($e) {
@@ -142,9 +150,9 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
             this.fields_view = data;
             var frame = new (this.registry.get_object('frame'))(this, this.fields_view.arch);
 
-            this.rendered = QWeb.render(this.form_template, { 'frame': frame, 'widget': this });
+            var rendered = QWeb.render(this.form_template, { 'frame': frame, 'widget': this });
         }
-        this.$element.html(this.rendered);
+        this.$element.html(rendered);
         this.$element.bind('mousedown.formBlur', function () {
             self.__clicked_inside = true;
         });
@@ -154,17 +162,14 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
                 .bind('widget-blur.formBlur', self.proxy('widgetBlurred'));
         });
         this.$form_header = this.$element.find('.oe_form_header:first');
-        this.$form_header.find('div.oe_form_pager button[data-pager-action]').click(function() {
+        this.$form_header.delegate('div.oe_form_pager button[data-pager-action]', 'click', function(e) {
+            e.stopImmediatePropagation();
             var action = $(this).data('pager-action');
             self.on_pager_action(action);
         });
-
-        this.$form_header.find('button.oe_form_button_save').click(this.on_button_save);
-        this.$form_header.find('button.oe_form_button_cancel').click(this.on_button_cancel);
-        this.$form_header.find('button.oe_form_button_create').click(this.on_button_create);
-        this.$form_header.find('button.oe_form_button_duplicate').click(this.on_button_duplicate);
-        this.$form_header.find('button.oe_form_button_delete').click(this.on_button_delete);
-
+        this.$form_header.delegate('.oe_form_buttons button', 'click', function(e){
+            self.on_button_click(e);
+        });
         if (!this.sidebar && this.options.sidebar && this.options.sidebar_id) {
             this.sidebar = new openerp.web.Sidebar(this, this.options.sidebar_id);
             this.sidebar.start();
@@ -175,7 +180,11 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
         }
         this.has_been_loaded.resolve();
     },
-
+    on_button_click: function(e) {
+        var fctname = $(e.currentTarget).data('action');
+        if (!fctname) return;
+        return this[fctname]();
+    },
     widgetFocused: function() {
         // Clear click flag if used to focus a widget
         this.__clicked_inside = false;
@@ -216,29 +225,34 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
         this.$element.show().css('visibility', 'hidden');
         this.$element.removeClass('oe_form_dirty');
         self.confirm_reload();
-        return this.has_been_loaded.then(function() {
-            var result;
-            if (self.dataset.index === null) {
-                // null index means we should start a new record
-                result = self.on_button_new();
-            } else {
-                result = self.dataset.read_index(_.keys(self.fields_view.fields), {
-                    context : { 'bin_size' : true }
-                }).then(
-                function(res){
-                    var d = new $.Deferred();
-                    self.on_record_loaded(res).done(function(){d.resolve()});
-                    return d;
-                })
-            }
-            result.then(function() {
-                self.$element.css('visibility', 'visible');
-            });
-            if (self.sidebar) {
-                self.sidebar.$element.show();
-            }
-            return result;
+        return this.has_been_loaded.then(self.shift_dataset_index());
+    },
+    shift_dataset_index: function() {
+        var result;
+        var self = this;
+        if (self.dataset.index === null) {
+            // null index means we should start a new record
+            result = self.on_button_new();
+        } else {
+            result = self.dataset.read_index(_.keys(self.fields_view.fields), {
+                context : { 'bin_size' : true }
+            }).then(
+            function(res){
+                var d = new $.Deferred();
+                self.on_record_loaded(res).done(function(){
+                    self.forbid_focus_default = null;
+                    d.resolve()
+                });
+                return d;
+            })
+        }
+        result.then(function() {
+            self.$element.css('visibility', 'visible');
         });
+        if (self.sidebar) {
+            self.sidebar.$element.show();
+        }
+        return result;
     },
     do_hide: function () {
         this.$element.removeClass('oe_form_dirty');
@@ -248,12 +262,22 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
             this.sidebar.$element.hide();
         }
     },
+    undirty_form: function() {
+        this.$element
+            .removeClass('oe_form_dirty')
+            .find('.invalid').removeClass('invalid');
+    },
+    do_focus_default_field: function() {
+        var self = this;
+        if (!!self.default_focus_field && !self.forbid_focus_default) {
+            self.default_focus_field && self.default_focus_field.focus();
+        }
+    },
     on_record_loaded: function(record) {
         var self = this, set_values = [];
-        var resDef = new $.Deferred();
         if (!record) {
             this.do_warn(_t("Form"), _t("The record could not be found in the database."), true);
-            return $.Deferred().reject();
+            return $.Deferred().promise()
         }
         this.datarecord = record;
         _(self.fields).each(function (field, f) {
@@ -264,7 +288,7 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
                 field.validate();
             });
         });
-        $.when.apply(null,set_values).then(function() {
+        return $.when.apply(null,set_values).then(function() {
             if (self.dataset.index === null) {
                 // New record: Second pass in order to trigger the onchanges
                 // respecting the fields order defined in the view
@@ -282,18 +306,14 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
             if (self.sidebar) {
                 self.sidebar.attachments.do_update();
             }
-            if (self.default_focus_field) {
-                self.default_focus_field.focus();
-            }
+            self.do_focus_default_field();
             if (record.id) {
                 self.do_push_state({id:record.id});
             }
-            self.$element.removeClass('oe_form_dirty');
+            self.undirty_form();
             self.remove_from_confirm_reload();
             self.do_update_id_holder();
-            resDef.resolve();
         });
-        return resDef;
     },
     on_form_changed: function() {
         _.each(this.widget_children, function(child) {
@@ -571,7 +591,12 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
         return def.promise();
     },
     on_button_save: function() {
-        var self = this;
+        var self = this,
+            __views = this.widget_parent.views;
+        if (__views && __views.list && __views.list.controller != null) {
+            __views.list.controller.stop();
+            __views.list.controller = null;
+        }
         return this.do_save()
     },
     on_button_cancel: function() {
@@ -614,9 +639,18 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
      * @param {Function} [success] callback on save success
      * @param {Boolean} [prepend_on_create=false] if ``do_save`` creates a new record, should that record be inserted at the start of the dataset (by default, records are added at the end)
      */
+    get_tab_page: function(field) {
+        var tab_page = null;
+        if (field.widget_parent.type === 'page' && field.widget_parent.element_id
+            && field.view && field.view.$element
+            && field.widget_parent.$element_tab && field.widget_parent.$element_tab.length
+            )
+            tab_page = field.widget_parent;
+        return tab_page;
+    },
     do_save: function(success, prepend_on_create) {
         var self = this;
-        return this.mutating_mutex.exec(function() { return self.is_initialized.then(function() {
+        return this.mutating_mutex.exec(function() {return self.is_initialized.then(function() {
             //try {
             var form_invalid = false,
                 values = {},
@@ -633,6 +667,12 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
                     // on 'create' : save all non readonly fields
                     // on 'edit' : save non readonly modified fields
                     values[f.name] = f.get_value();
+                    var tab_page = self.get_tab_page(f);
+                    if (
+                        tab_page && f.view && f.view.$element
+                        && !f.view.$element.find('#'+tab_page.element_id).find('.invalid').length
+                    )
+                        tab_page.$element_tab.removeClass('ea_invalid_tab');
                 }
                 f.update_dom(true);
             }
@@ -641,6 +681,7 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
                 self.on_invalid();
                 return $.Deferred().reject();
             } else {
+                self.$element.find('.ea_invalid_tab').removeClass('ea_invalid_tab');
                 var save_deferral;
                 if (!self.datarecord.id) {
                     save_deferral = new $.Deferred();
@@ -659,11 +700,8 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
                 }
                 return save_deferral.done(success);
             }
-            //} catch (e) {
-                //console.error(e);
-                //return $.Deferred().reject();
-            //}
-        });});
+        });
+        });
     },
     is_valid: function() {
         var self = this;
@@ -679,10 +717,13 @@ openerp.web.FormView = openerp.web.View.extend( /** @lends openerp.web.FormView#
         return this.readonly || ((typeof(this.widget_parent.is_readonly)!=='undefined') && this.widget_parent.is_readonly());
     },
     on_invalid: function() {
+        var self = this;
         var msg = "<ul>";
         _.each(this.fields, function(f) {
             if (!f.is_valid()) {
                 msg += "<li>" + f.string + "</li>";
+                var tab_page = self.get_tab_page(f);
+                tab_page && tab_page.$element_tab.addClass('ea_invalid_tab');
             }
         });
         msg += "</ul>";
@@ -805,7 +846,6 @@ openerp.web.FormDialog = openerp.web.Dialog.extend({
         return this;
     },
     start: function() {
-
         this._super();
         this.form = new openerp.web.FormView(this, this.dataset, this.view_id, {
             sidebar: false,
@@ -844,6 +884,11 @@ openerp.web.form.SidebarAttachments = openerp.web.OldWidget.extend({
             return _.str.sprintf(_t("Delete the attachment %s"), name);
         };
     },
+    stop: function() {
+        if (this.$div && this.$div[0]) this.$div[0].remove();
+        this.$div = null; delete this.$div;
+        this._super();
+    },
     do_update: function() {
         if (!this.view.datarecord.id) {
             this.on_attachments_loaded([]);
@@ -860,10 +905,16 @@ openerp.web.form.SidebarAttachments = openerp.web.OldWidget.extend({
     process_modifiers: function() {
     },
     on_attachments_loaded: function(attachments) {
+        var self = this;
         this.attachments = attachments;
         this.$div.html(QWeb.render('FormView.sidebar.attachments', this));
-        this.$element.find('.oe-binary-file').change(this.on_attachment_changed);
-        this.$element.find('.oe-sidebar-attachment-delete').click(this.on_attachment_delete);
+        this.$element.on('change', '.oe-binary-file', function(e) {
+            e.stopImmediatePropagation();
+            return self.on_attachment_changed(e);
+        });
+        this.$element.on('click','.oe-sidebar-attachment-delete', function(e){
+            return self.on_attachment_delete(e);
+        });
     },
     on_attachment_changed: function(e) {
         window[this.element_id + '_iframe'] = this.do_update;
@@ -875,6 +926,7 @@ openerp.web.form.SidebarAttachments = openerp.web.OldWidget.extend({
         }
     },
     on_attachment_delete: function(e) {
+        e.stopImmediatePropagation();
         var self = this, $e = $(e.currentTarget);
         var name = _.str.trim($e.parent().find('a.oe-sidebar-attachments-link').text());
         if (confirm(_.str.sprintf(_t("Do you really want to delete the attachment %s?"), name))) {
@@ -974,6 +1026,9 @@ openerp.web.form.Widget = openerp.web.OldWidget.extend(/** @lends openerp.web.fo
      */
     init: function(view, node) {
         this.view = view;
+        _.defaults(node.attrs, {context: {}});
+        _.defaults(node.attrs.context, {own_values: {}});
+        node.attrs.context.own_values._onchange_field = node.attrs.name;
         this.node = node;
         this.modifiers = JSON.parse(this.node.attrs.modifiers || '{}');
         this.always_invisible = (this.modifiers.invisible && this.modifiers.invisible === true);
@@ -1223,7 +1278,7 @@ openerp.web.form.WidgetFrame = openerp.web.form.Widget.extend({
         var widget = new (this.view.registry.get_any(
                 [node.attrs.widget, type.type, node.tag])) (this.view, node);
         if (node.tag == 'field') {
-            if (!this.view.default_focus_field || node.attrs.default_focus == '1') {
+            if (!this.view.default_focus_field && node.attrs.invisible != true || node.attrs.default_focus == true) {
                 this.view.default_focus_field = widget;
             }
             if (node.attrs.nolabel != '1') {
@@ -1360,11 +1415,14 @@ openerp.web.form.WidgetButton = openerp.web.form.Widget.extend({
     },
     on_click: function() {
         var self = this;
+        var $button = this.$element.find('button');
         this.force_disabled = true;
         this.check_disable();
+        $button.attr('disabled','disabled')
         this.execute_action().always(function() {
             self.force_disabled = false;
             self.check_disable();
+            $button.removeAttr('disabled');
         });
     },
     execute_action: function() {
@@ -1398,8 +1456,9 @@ openerp.web.form.WidgetButton = openerp.web.form.Widget.extend({
         if (!this.node.attrs.special) {
             previous_ids = self.view.dataset.ids;
             this.view.force_dirty = true;
-            return $.when(this.view.recursive_save().then(function() {exec_action().then(function(){
+            return $.when(this.view.recursive_save().then(function() { return exec_action().then(function(){
                 if (!!self.view.widget_parent.reload_content) self.view.widget_parent.reload_content();
+                return $.Deferred().resolve();
                 });
             }));
         } else {
@@ -1496,7 +1555,6 @@ openerp.web.form.WidgetLabel = openerp.web.form.Widget.extend({
         var $label = this.$element.find('label');
         $label.dblclick(function() {
             var widget = self['for'] || self;
-            openerp.log(widget.element_class , widget);
             window.w = widget;
         });
         this.setupFocus($label);
@@ -1532,6 +1590,7 @@ openerp.web.form.Field = openerp.web.form.Widget.extend(/** @lends openerp.web.f
         this.soft_readonly = ( this.modifiers['soft_readonly'] === true || node.attrs.soft_readonly == (1 || true) );
         this.required = this.modifiers['required'] === true;
         this.invalid = this.dirty = false;
+        this.invisible = this.invisible || this.node.attrs && this.node.attrs['invisible'] === '1';
         this.classname = 'oe_form_field_' + this.type;
     },
     start: function() {
@@ -1547,11 +1606,17 @@ openerp.web.form.Field = openerp.web.form.Widget.extend(/** @lends openerp.web.f
         }
         self.$element.find('input,textarea').bind('blur', function(e) {self.on_blur(e); })
             .bind('focus', function(e) {self.on_focus(e); });
-        self.view.do_onchange && self.view.do_onchange.add(function(){
-            setTimeout(function(){
-                !!self.view.default_focus_field && self.view.default_focus_field.focus();
-                delete self.view.default_focus_field;
-            },50);
+    },
+    stop: function() {
+        this._super();
+        $.async_when().then(function(){
+            if (this.$input)
+            {
+                _.each(this.$input,function(el){
+                    el.remove();
+                });
+                this.$input = null;
+            }
         });
     },
     on_blur: function(e) {
@@ -1577,7 +1642,7 @@ openerp.web.form.Field = openerp.web.form.Widget.extend(/** @lends openerp.web.f
         $input.bind('cut', function(event) {
             self.on_ui_change(); self.on_ui_change(); self.set_value_from_ui();
         });
-        $input.keyup(function(e){
+        self.$element.find('input,textarea').keyup(function(e){
             var avoid_keys = [9, 13, 16, 17, 18, 0, 67, 37, 38, 39, 40];
             /*
             9 -- Tab
@@ -1598,6 +1663,7 @@ openerp.web.form.Field = openerp.web.form.Widget.extend(/** @lends openerp.web.f
                         delay(function(){
                             if (self.wait_for_onchange)
                             {
+                                self.view.forbid_focus_default = true;
                                 self.set_value_from_ui();
                                 self.on_ui_change();
                                 self.wait_for_onchange = false;
@@ -1612,10 +1678,6 @@ openerp.web.form.Field = openerp.web.form.Widget.extend(/** @lends openerp.web.f
             switch (e.keyCode) {
                 case 9:
                     self.wait_for_onchange = false;
-                    delete self.view.default_focus_field;
-                    self.set_value_from_ui();
-                    self.on_ui_change();
-                    setTimeout(function(){$(e.originalEvent.target).focus().select();},0);
                     break;
                 case 13:
                     if ( openerp.web.parse_value(self.$element.find('input').val(),self) !== self.get_value() )
@@ -1672,7 +1734,7 @@ openerp.web.form.Field = openerp.web.form.Widget.extend(/** @lends openerp.web.f
                 var next_field_name = this.widget_parent.view.fields_order[i];
                 var next_field = this.view.fields[next_field_name];
                 if (next_field.readonly!==true && !next_field.node.attrs.invisible && !next_field.invisible) {
-                    return self.view.default_focus_field = next_field;
+                    return next_field;
                 }
             }
             return self.view.fields[self.view.fields_order[0]];
@@ -1685,18 +1747,23 @@ openerp.web.form.Field = openerp.web.form.Widget.extend(/** @lends openerp.web.f
         if (this.is_valid()) {
             if (this.is_dirty() && this.get_value()) {
                 if (this.move_forward && this.move_forward==true) {
-                    var focus_field = this;
-                    focus_field.view.default_focus_field = focus_field.move_to_next_ui_field();
-                    // focus_field.view.default_focus_field.focus(null,500);
+                    var __focus_field = this.move_to_next_ui_field();
+                    this.view.forbid_focus_default = true;
+                    if (self.view instanceof openerp.web.ListEditableFormView == false)
+                        self.view.default_focus_field = null;
+                    this.view.on_change_mutex.def.done(function() {
+                        setTimeout(function(){
+                            __focus_field.focus();
+                        },100);
+                    });
                 } else {
-                    delete this.view.default_focus_field;
+                    this.view.forbid_focus_default = null;
                 }
             }
             this.set_value_from_ui();
             this.trigger_view();
-        } else {
-            this.update_dom(true);
         }
+        this.update_dom(true);
     },
     trigger_view: function() {
         var self = this;
@@ -1936,10 +2003,16 @@ openerp.web.form.FieldFloat = openerp.web.form.FieldChar.extend({
                         delta = delta || 0;
                         var new_value = Math.max(parseFloat(event.target.value)+delta,0);
                         $(e.target).val(new_value);
+                        self.dirty = !!delta || self.dirty;
                         delay(function(){
                             self.set_value_from_ui();
                             self.on_ui_change();
                         },1000);
+                        $(e.target).mouseout(function(sub_event){
+                            $(this).unbind('mousewheel');
+                            self.set_value_from_ui();
+                            self.on_ui_change();
+                        });
                     })
             });
             spinner();
@@ -1948,80 +2021,8 @@ openerp.web.form.FieldFloat = openerp.web.form.FieldChar.extend({
             });
             $(e.target).mouseout(function(sub_event){
                 $(this).unbind('mousewheel');
-                self.set_value_from_ui();
             });
         });
-    },
-});
-
-openerp.web.form.FieldSpinner = openerp.web.form.FieldFloat.extend({
-    // template: "Spinner",
-    type: 'float',
-    start: function() {
-        this._super.apply(this, arguments);
-        var self = this;
-        this.spinner_listeners();
-    },
-    show_spinner_buttons: function() {
-        this.$element.find('button').show();
-        this.$element.focus();
-    },
-    hide_spinner_buttons: function() {
-        var self = this, $input = this.$element.find('input');
-        setTimeout(function(){
-            if (!$input.is(':focus') && !self.is_focused) {
-            self.$element.find('button').hide();
-            }
-        },500);
-        self.set_value_from_ui();
-    },
-    on_focus: function(e) {
-        this.$element.addClass('active').focus().select();
-        this.show_spinner_buttons();
-    },
-    on_blur: function(e) {
-        var self = this;
-        this.$element.find('button').mouseout(function(){
-            self.set_value_from_ui();
-            self.is_focused = false;
-        });
-        if (!this.is_focused) this.hide_spinner_buttons();
-        else this.is_focused = false;
-    },
-    spinner_listeners: function() {
-        var self = this, $input = this.$element.find('input');
-        var delay = (function(){
-                var timer = 0;
-                return function(callback, ms){
-                    clearTimeout(timer);
-                    timer = setTimeout(callback, ms);
-                };
-            })();
-        self.$element.find('button').mouseover(function(e){
-            $(this).click(function(spinner_clck_e){
-                self.is_focused = true;
-                spinner_clck_e.stopImmediatePropagation();
-                var trgt = spinner_clck_e.target;
-                var new_value;
-                var trarget_field = self.$element.find('input');
-                var incrementation = (trgt.tagName === "SPAN" && trgt.className === "icon-chevron-up") || (trgt.tagName === "BUTTON" && (/spinner_up/).test(trgt.className))?true:false;
-                if (incrementation===true)
-                    new_value = parseFloat(trarget_field[0].value)+1;
-                else if (incrementation===false)
-                    new_value = parseFloat(trarget_field[0].value)-1;
-                trarget_field.val(new_value);
-                delay(function(){
-                            self.set_value(new_value);
-                            self.on_ui_change();
-                        },500);
-                $input.focus().select();
-                self.show_spinner_buttons();
-            });
-        })
-    },
-    set_value_from_ui: function() {
-        this.value = parseFloat(this.$element.find('input').val(), this);
-        // this.on_ui_change();
     },
 });
 
@@ -2081,7 +2082,8 @@ openerp.web.DateTimeWidget = openerp.web.OldWidget.extend({
             changeMonth: true,
             changeYear: true,
             showWeek: true,
-            showButtonPanel: true
+            showButtonPanel: true,
+            appendTo: !!self.widget_parent.view ? self.widget_parent.view.$element : self.$element.closest('.oe_searchview_field,body')
         });
         this.$element.find('img.oe_datepicker_trigger').click(function() {
             if (self.is_readonly() || self.picker('widget').is(':visible')) {
@@ -2095,6 +2097,22 @@ openerp.web.DateTimeWidget = openerp.web.OldWidget.extend({
         });
         this.set_readonly(false);
         this.value = false;
+    },
+    stop: function() {
+        if (this.$input)
+        {
+            this.$input.datetimepicker('widget').unbind().removeData().empty().remove();
+            this.$input.datetimepicker = null;
+        }
+        if (this.$input_picker)
+        {
+            _.each(this.$input_picker, function(el){
+                el.remove();
+            });
+            // this.$input_picker.unbind().removeData().empty();
+            delete this.$input_picker;
+        }
+        this._super();
     },
     picker: function() {
         return $.fn[this.jqueryui_object].apply(this.$input_picker, arguments);
@@ -2189,6 +2207,14 @@ openerp.web.form.FieldDatetime = openerp.web.form.Field.extend({
             }
         });
     },
+    stop: function() {
+        if (this.datewidget.$input && this.datewidget.$input[0])
+        {
+            this.datewidget.$input[0].remove();
+            delete this.datewidget.$input;
+        }
+        this._super();
+    },
     set_value: function(value) {
         this._super(value);
         this.datewidget.set_value(value);
@@ -2222,11 +2248,13 @@ openerp.web.form.FieldText = openerp.web.form.Field.extend({
         this.resized = false;
         this.setupFocus($textarea);
         this.add_listeners($textarea);
+        if (this.view instanceof openerp.web.ListEditableFormView == false)
+            this.resizable_bottom();
     },
     set_value: function(value) {
         this._super.apply(this, arguments);
         var show_value = openerp.web.format_value(value, this, '');
-        this.$element.find('textarea').val(show_value);
+        this.get_element('textarea').val(show_value);
         if (!this.resized && this.view.options.resize_textareas) {
             this.do_resize(this.view.options.resize_textareas);
             this.resized = true;
@@ -2261,6 +2289,52 @@ openerp.web.form.FieldText = openerp.web.form.Field.extend({
     },
     focus: function($element) {
         this._super($element || this.$element.find('textarea:first'));
+    },
+    resizer_dblclick: function() {
+        var $textarea = this.get_element('textarea'),
+            __content_height = $textarea[0].scrollHeight,
+            __client_height = $textarea[0].clientHeight;
+        if (__content_height > __client_height) {
+            this.old_height = __client_height;
+            $textarea.height(__content_height);
+        } else {
+            $textarea.height(this.old_height || 'initial');
+        }
+    },
+    init_resize: function(event) {
+        var self = this,
+            $resizer = this.get_element('.ea_textarea_resize'),
+            $textarea = this.get_element('textarea'),
+            startHeight = $textarea.height();
+            startY = event.clientY,
+            __document_el = document.documentElement,
+            doDrag = function(e) {
+                $textarea.height(startHeight + e.clientY - startY);
+            },
+            stopDrag = function() {
+                __document_el.removeEventListener('mousemove', doDrag, false);
+                __document_el.removeEventListener('mouseup', stopDrag, false);
+                __document_el.removeEventListener('click', stopDrag, false);
+            };
+        __document_el.addEventListener('mousemove', doDrag, false);
+        __document_el.addEventListener('mouseup', stopDrag, false);
+        __document_el.addEventListener('click', stopDrag, false);
+    },
+    resizable_bottom: function() {
+        var self = this,
+            elem = $('<div class="ea_textarea_resize">'),
+            $textarea = this.get_element('textarea');
+        $textarea.after(elem);
+        var $resizer = this.get_element('.ea_textarea_resize');
+        $resizer.on('dblclick', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.resizer_dblclick();
+        });
+        $resizer.mousedown( function(e){
+            e.preventDefault();
+            self.init_resize.call(self, e);
+        });
     },
     do_resize: function(max_height) {
         max_height = parseInt(max_height, 10);
@@ -2344,8 +2418,6 @@ openerp.web.form.FieldTextWysiwyg = openerp.web.form.FieldText.extend({
                 notify_change()
             }
         });
-        // this.cleditor.$area.on('paste', function(){console.log('-111-paste '); notify_change()});
-        // this.cleditor.$area.on('cut', function(){console.log('-111-cut ');notify_change()});
         $(this.cleditor.doc)
             .on('cut', function(){
                 setTimeout(function(){notify_change()},0);
@@ -2355,6 +2427,7 @@ openerp.web.form.FieldTextWysiwyg = openerp.web.form.FieldText.extend({
              })
             .end();
     },
+    resizable_bottom: function() {},
     update_dom: function() {
         this._super.apply(this, arguments);
         this.cleditor.disable(this.is_readonly());
@@ -2368,6 +2441,7 @@ openerp.web.form.FieldTextWysiwyg = openerp.web.form.FieldText.extend({
     set_value: function (value) {
         this._super.apply(this, arguments);
         this.cleditor.updateFrame();
+        // this.$input.cleditor()[0].refresh();
         this.original_value = value
     }
 });
@@ -2428,6 +2502,7 @@ openerp.web.form.FieldSelection = openerp.web.form.Field.extend({
         var self = this;
         this._super(view, node);
         this.values = _.clone(this.field.selection);
+        this.move_forward  = (!!this.node.attrs.move_forward && this.node.attrs.move_forward!=='0')?true:false;
         _.each(this.values, function(v, i) {
             if (v[0] === false && v[1] === '') {
                 self.values.splice(i, 1);
@@ -2447,6 +2522,7 @@ openerp.web.form.FieldSelection = openerp.web.form.Field.extend({
         //   also if the user opened the select and pressed [RETURN] without
         //   changing the selected value), takes the action as validating the
         //   row
+        var self = this;
         var ischanging = false;
         this._super.apply(this, arguments);
         var $select = this.$element.find('select');
@@ -2460,6 +2536,12 @@ openerp.web.form.FieldSelection = openerp.web.form.Field.extend({
                 ischanging = false;
             });
         this.setupFocus($select);
+        if (self.node.attrs.disabled_options) {
+            _.each(self.node.attrs.disabled_options.split(','), function(option_name) {
+                option_name = option_name.trim()
+                self.$element.find('option[value="' + option_name + '"]').attr('disabled', 'disabled');
+            });
+        }
     },
     set_value: function(value) {
         value = value === null ? false : value;
@@ -2537,7 +2619,8 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
         this.limit = 7;
         this.value = null;
         this.cm_id = _.uniqueId('m2o_cm_');
-        this.move_forward  = (!!this.node.attrs.move_forward && this.node.attrs.move_forward!=='0')?true:false;
+        this.move_forward  = (!!this.node.attrs.move_forward && this.node.attrs.move_forward!=='0') ? true : false;
+        this.quick_create = this.node.attrs.quick_create == true
         this.last_search = [];
         this.tmp_value = undefined;
     },
@@ -2627,15 +2710,9 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
         this.$input.focusin(function(e) {
             self.$input = $(e.target);
         });
-        // some behavior for input
-        this.$input.keyup(function() {
-            if (self.$input.val() === "") {
-                self._change_int_value(null);
-            } else if (self.value === null || (self.value && self.$input.val() !== self.value[1])) {
-                self._change_int_value(undefined);
-            }
-        });
-        this.$drop_down.click(function() {
+
+        var __autocmplt_visible = false;
+        this.$drop_down.click(function(event) {
             self.$input.focus();
             var clear_timer = function(){
                 if (typeof(timer_to_close_listbox)!=='undefined') {
@@ -2649,6 +2726,8 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
                 },
                 close_listbox = function(){
                     clear_timer();
+                    // unbind closing autocomplete widget on global focus out
+                    document.onclick = null;
                     if (!self.$input.is(':focus'))
                         timer_to_close_listbox = setTimeout(function(){
                             $('[role="listbox"]:visible').fadeOut(300);
@@ -2656,11 +2735,12 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
                         },3000);
                     return true;
                 };
-            if (self.is_readonly())
+            if (self.is_readonly() || self.widget_blurred)
                 return;
-            if (self.$input.autocomplete("widget").is(":visible")) {
+            if (self.$input.autocomplete("widget").is(":visible") || __autocmplt_visible) {
                 self.$input.autocomplete("close");
                 self.$input.focus();
+                delete __autocmplt_visible;
             } else {
                 hide_listboxes();
                 close_listbox();
@@ -2670,76 +2750,88 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
                     self.$input.autocomplete("search");
                 }
                 document.onclick = function(e){
-                    if (!self.$input[0].isEqualNode($(e.target).closest('.oe_form_frame_cell').find('input')[0])) self.$input.blur();
+                    if (!self.$input[0].isEqualNode($(e.target).closest('.oe_form_frame_cell').find('input')[0]))
+                        self.$input.blur();
                 };
                 $('[role="listbox"]').mouseover(function(){ clear_timer() });
                 $('[role="listbox"]').mouseout(function(){ close_listbox() });
             }
         });
-
+        this.$drop_down.mousedown(function(){
+            __autocmplt_visible = self.$input.autocomplete("widget").is(":visible");
+        });
         // Autocomplete close on drag dialog
         this.$input.closest(".ui-dialog").bind( "dialogdragstart dialogresizestart", function() {
-            self.$input.autocomplete("close");
+            if (!self.$input.autocomplete('widget').length) {
+                self.$input.autocomplete("close");
+                self.$input.autocomplete('destroy');
+            }
         });
 
         var anyoneLoosesFocus = function() {
-            var dataset_write = (function(value){
-                if (!this && !this.view.dataset.cache && self.view.dataset.index!=null) return;
-                var self = this, to_save = {}, data_id = this.view.datarecord.id;
-                to_save[this.name] = self.normalize_value(value);
-                this.view.dataset.write(data_id,to_save);
-                this.view.dataset.on_change && this.view.dataset.on_change();
-                if (self.view.widget_parent.records && !!this.view.widget_parent.records.get(data_id)) {
-                    this.view.widget_parent.records.get(data_id).attributes[self.name] = [self.name, value];
-                    this.view.widget_parent.reload_record(self.view.widget_parent.records.get(data_id));
-                }
-            });
-            if (!self.$input.is(":focus")
-                && !self.$input.autocomplete("widget").is(":visible")
-                && !self.value
+            var $autocomplete = self.$input.autocomplete('widget');
+            // unbind closing autocomplete widget on global focus out
+            document.onclick = null;
+            if (
+                !self.$input.is(":focus")
+                && self.value == null
+                && self.original_value == null
             ) {
-                // self._change_int_ext_value(self.last_search[0]);
-                if (self.value === undefined && self.last_search.length > 0 && self.$input.autocomplete("widget").is(':active')===false) {
+                if (self.value === undefined && self.last_search.length > 0 && $autocomplete.is(':active')===false) {
                     self._change_int_ext_value(self.last_search[0]);
-                    dataset_write.call(self, self.last_search[0]);
                 } else {
                     self._change_int_ext_value(null);
                 }
-            } else if (!self.$input.is(":focus")
-                && self.$input.val()!==''
-                && self.$input.autocomplete("widget").is(":visible")
+            } else if (
+                !self.$input.is(":focus")
                 && self.last_search.length>0
                 ) {
-                    if (arguments[0].relatedTarget == null) {
+                if (self.$input.val() !== '') {
+                    console.log(self.get_string(self.value),  self.$input.val());
+                    if (
+                        arguments[0].relatedTarget == null || __blurred || !_.isEmpty(self.value) && self.get_string(self.value) == self.$input.val()
+                    ) {
                         if (self.original_value != null) {
                             self._change_int_ext_value(self.original_value);
                             return;
                         }
                         self._change_int_ext_value(null);
                         return
-                    } ;
-                    if (
-                        !self.$input.autocomplete("widget").is(':active')
-                        && self.$input.autocomplete('widget').find('.ui-state-focus').length==0
-                        ) {
-                            self._change_int_ext_value(self.last_search[0]);
                     } else if (
-                        self.$input.autocomplete("widget").is(':active')
-                        && self.$input.autocomplete('widget').find('.ui-state-focus').length!=0
+                        $autocomplete.is(':visible')
+                        || $autocomplete.is(':active')
+                        || self.last_search.length > 0
                         ) {
-                            try { self._change_int_ext_value(self.last_search[self.$input.autocomplete('widget').find('li:active').index()]);
-                            } catch (err) { console.warn('failed to change',err); }
+                        if (
+                            $autocomplete.find('.ui-state-focus').length == 0
+                            && self.last_search[0] !== self.original_value
+                            ) {
+                            self._change_int_ext_value(self.last_search[0]);
+                        } else if ($autocomplete.find('.ui-state-focus').length == 0) {
+                            try {
+                                self._change_int_ext_value(self.last_search[$autocomplete.find('li:active').index()]);
+                            } catch (err) {
+                                console.warn('failed to change',err);
+                            }
                         }
+                    } else {
+                        self._change_int_ext_value(self.original_value);
+                        return;
+                    }
+                } else {
+                        self._change_int_ext_value(null);
+                }
             }
+            self._change_int_ext_value(self.original_value);
+            return;
         };
-        var $self = $(self), ignore_blur = false, ignore_source = false;
-        // this.$input.get(0).addEventListener("DOMFocusOut",function(){anyoneLoosesFocus()})
+        var $self = $(self), ignore_blur = false, ignore_source = false, __blurred = true;
         this.$input.bind({
-            focusout: anyoneLoosesFocus,
+            // focusout: function(event) { anyoneLoosesFocus(event) },
             focus: function () { $self.trigger('widget-focus'); },
             autocompleteopen: function () { ignore_blur = true; },
             autocompleteclose: function () { ignore_blur = false; },
-            blur: function () {
+            blur: function (event) {
                 // autocomplete open
                 if (ignore_blur) { return; }
                 var child_popup_open = _(self.widget_children).any(function (child) {
@@ -2749,7 +2841,6 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
                 if (child_popup_open) {
                     return;
                 }
-                // $self.trigger('widget-blur');
             }
         });
 
@@ -2774,15 +2865,28 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
             focus: function(e, ui) {
                 e.preventDefault();
             },
+            appendTo: self.view.$element,
             html: true,
-            close: anyoneLoosesFocus,
+            close: function(event) {
+                if (!__blurred && !ignore_blur) {
+                    anyoneLoosesFocus(event);
+                }
+                else {
+                    document.onclick = null;
+                }
+            },
             minLength: 0,
             delay: 0
         });
-
+        // some behavior for input
         // used to correct a bug when selecting an element by pushing 'enter' in an editable list
         this.$input.keydown(function(e) {
             // avoid opening dropdown autocomplete list on PageUp / PageDown
+            // and on Tab key is pressed
+            if (e.which == 9)
+                __blurred = false;
+            else
+                __blurred = true;
             if (e.shiftKey || e.which == 33 || e.which == 34) {
                 ignore_source = true;
             } else {
@@ -2795,9 +2899,58 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
                     e.stopPropagation();
                 }
             }
+            if (self.$input.val() === "") {
+                var _original_value = self.original_value;
+                self._change_int_value(null);
+            } else if (self.value === null || (self.value && self.$input.val() !== self.value[1])) {
+                self._change_int_value(undefined);
+            }
+        });
+        this.$input.focusout(function(e) {
+            if (__blurred) {
+                self._change_int_ext_value(self.original_value);
+                self.validate();
+                self.update_dom(true);
+            } else if (!ignore_source && !ignore_blur && self.$input.val() == '') {
+                anyoneLoosesFocus(e);
+            }
         });
 
         this.setupFocus(this.$menu_btn);
+    },
+    stop: function() {
+        this._super();
+        try {
+            if (this.$input && this.$input.autocomplete('widget'))
+            {
+                this.$input.autocomplete('destroy');
+            }
+        } catch(e) {}
+        if (this.$drop_down)
+        {
+            this.$drop_down[0].remove();
+            delete this.$drop_down;
+        }
+        if (this.$menu_btn)
+        {
+            this.$menu_btn[0].remove();
+            delete this.$menu_btn;
+        }
+    },
+    get_string: function(value) {
+        if (!(value instanceof Array)) {
+            return value;
+        } else {
+            var result;
+            for (var i=0; i<value.length; i++) {
+                if (!!value[i] && typeof(value[i]) == 'string')
+                {
+                    result = value[i];
+                    break;
+                }
+            }
+            return result;
+        }
     },
     // autocomplete component content handling
     get_search_result: function(request, response) {
@@ -2845,15 +2998,19 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
             }
             // quick create
             var raw_result = _(data.result).map(function(x) {return x[1];});
+
             if (search_val.length > 0 &&
                 !_.include(raw_result, search_val) &&
-                (!self.value || search_val !== self.value[1])) {
+                (!self.value || search_val !== self.value[1]) &&
+                self.quick_create == true
+                // If quick_create attribute is set ot True or "1" , then allow to create new
+                ) {
                 values.push({label: _.str.sprintf(_t('<em>   Create "<strong>%s</strong>"</em>'),
                         $('<span />').text(search_val).html()), action: function() {
                     self._quick_create(search_val);
                 }});
             }
-            // create...
+            // create
             values.push({label: _t("<em>   Create and Edit...</em>"), action: function() {
                 self._change_int_value(null);
                 self._search_create_popup("form", undefined, {"default_name": search_val});
@@ -2917,6 +3074,8 @@ openerp.web.form.FieldMany2One = openerp.web.form.Field.extend({
         }
         if (back_orig_value === undefined) { // first use after a set_value()
             return;
+        } else {
+            this.view.forbid_focus_default = !this.value;
         }
         if (this.value !== undefined && ((back_orig_value ? back_orig_value[0] : null)
                 !== (this.value ? this.value[0] : null))) {
@@ -3119,7 +3278,7 @@ openerp.web.form.FieldOne2Many = openerp.web.form.Field.extend({
     },
     load_views: function() {
         var self = this;
-        
+
         var modes = this.node.attrs.mode;
         modes = !!modes ? modes.split(",") : ["tree"];
         var views = [];
@@ -3160,9 +3319,6 @@ openerp.web.form.FieldOne2Many = openerp.web.form.Field.extend({
             form: 'openerp.web.form.One2ManyFormView',
             page: 'openerp.web.PageView'
         });
-        if (this.node.attrs.widget == 'o2m_editable' && !this.is_readonly()) {
-            this.viewmanager.registry.map.list = 'openerp.web.form.One2ManyListViewEditable'
-        }
         var once = $.Deferred();
         once.then(function() {
             self.init_form_last_update.resolve();
@@ -3502,215 +3658,7 @@ openerp.web.form.One2ManyListView = openerp.web.ListView.extend({
         return this._super(record);
     }
 });
-openerp.web.form.One2ManyListViewEditable = openerp.web.View.extend({
-    _template: 'One2Many.list',
-    init: function (parent, dataset, view_id, options) {
-        this._super(parent, dataset, view_id, options);
-        this.fields_order = [];
-        this.widgets = {};
-        this.columns = [];
-        this.rows = []; 
-    },
-    start: function() {
-        this._super.apply(this, arguments);
-        return this.reload_view(null, null, true);
-    },
-    reload_view: function (grouped, context, initial) {
-        var self = this;
-        var callback = function (field_view_get) {
-            self.on_loaded(field_view_get, grouped);
-        };
-        if (this.embedded_view) {
-            return $.Deferred().done(callback).resolve(this.embedded_view);
-        } 
-        else {
-            return this.rpc("/web/view/load", {
-                    "model": this.dataset.model,
-                    "view_id": this.view_id,
-                    "view_type": "tree",
-                    context: this.dataset.get_context(context),
-                    toolbar: this.options.sidebar
-                    }, callback);
-        }
-    },
-    on_loaded: function(data, grouped) {
-        var self = this;
-        this.embedded_view = data;
-        this.fields_view = data;
-        this.name = "" + this.fields_view.arch.attrs.string;
 
-        this.setup_columns(this.fields_view.fields, grouped);
-        this.$element.html(QWeb.render(this._template, this));
-
-        // Head hook
-        this.$element.find('button.oe_form_button_create').click(this.on_button_create);
-        this.$element.find('button.oe_form_button_duplicate').click(this.on_button_duplicate);
-        this.$element.find('button.oe_form_button_delete').click(this.on_button_delete);
-    },
-    reload_content: function() {
-        var self = this;
-        this.dataset.read_ids(this.dataset.ids).done(function (){
-            self.create_table();
-        });
-    },
-    create_table: function () {
-        var self = this;
-        self.rows = [];
-        this.fields_view.fields_order = [];
-        this.$element.find('tbody.oe_o2m_list').empty();
-        for (id in this.dataset.ids) {
-            self.rows.push(self.create_row(id));
-        }
-
-    },
-    create_row: function(index_id) {
-        var self = this;
-        var row_frame = new (openerp.web.ListFormView)(self, self.dataset, false, {});
-        row_frame.appendTo(self.$element.find('tbody.oe_o2m_list'));
-        row_frame.index = index_id;
-        row_frame.do_show();
-        return row_frame;
-    },
-    on_button_create: function() {
-        this.previous_index = this.dataset.index;
-        this.dataset.index = null;
-        this.create_row(null);
-    },
-    on_button_delete: function() {
-        var self = this;
-        var def = $.Deferred();
-        $.when(this.has_been_loaded).then(function() {
-            if (self.dataset.index && confirm(_t("Do you really want to delete this record?"))) {
-                self.dataset.unlink([self.dataset.ids[self.dataset.index]]).then(function() {
-                    self.reload_content();
-                    def.resolve();
-                });
-            } else {
-                $.async_when().then(function () {
-                    def.reject();
-                })
-            }
-        });
-        return def.promise();
-    },
-    on_button_duplicate: function() {
-        var self = this;
-        var def = $.Deferred();
-        $.when(this.has_been_loaded).then(function() {
-            self.dataset.call('copy', [self.dataset.ids[self.dataset.index], {}, self.dataset.context]).then(function(new_id) {
-                self.dataset.ids.push(new_id);
-                return self.reload_content();
-            });
-        });
-        return def.promise();
-    },
-    setup_columns: function (fields, grouped) {
-        var domain_computer = openerp.web.form.compute_domain;
-
-        var noop = function () { return {}; };
-        var field_to_column = function (field) {
-            var name = field.attrs.name;
-            var column = _.extend({id: name, tag: field.tag},
-                    fields[name], field.attrs);
-            // modifiers computer
-
-            if (column.modifiers) {
-                var modifiers = JSON.parse(column.modifiers);
-                column.modifiers_for = function (fields) {
-                    if (!modifiers.invisible) {
-                        return {};
-                    }
-                    return {
-                        'invisible': domain_computer(modifiers.invisible, fields)
-                    };
-                };
-                if (modifiers['tree_invisible']) {
-                    column.invisible = '1';
-                } else {
-                    delete column.invisible;
-                }
-            } else {
-                column.modifiers_for = noop;
-            }
-            return column;
-        };
-
-        this.columns.splice(0, this.columns.length);
-        this.columns.push.apply(
-                this.columns,
-                _(this.fields_view.arch.children).map(field_to_column));
-        if (grouped) {
-            this.columns.unshift({
-                id: '_group', tag: '', string: _t("Group"), meta: true,
-                modifiers_for: function () { return {}; }
-            }, {
-                id: '_count', tag: '', string: '#', meta: true,
-                modifiers_for: function () { return {}; }
-            });
-        }
-
-        this.visible_columns = _.filter(this.columns, function (column) {
-            return column.invisible !== '1';
-        });
-
-        this.aggregate_columns = _(this.visible_columns)
-            .map(function (column) {
-                if (column.type !== 'integer' && column.type !== 'float') {
-                    return {};
-                }
-                var aggregation_func = column['group_operator'] || 'sum';
-                if (!(aggregation_func in column)) {
-                    return {};
-                }
-
-                return _.extend({}, column, {
-                    'function': aggregation_func,
-                    label: column[aggregation_func]
-                });
-            });
-    },
-    set_editable: function (force) {
-    },
-    ensure_saved: function () {
-        return true;
-    },
-    is_valid: function () {
-        // If the form has not been modified, the view can only be valid
-        // NB: is_dirty will also be set on defaults/onchanges/whatever?
-        // oe_form_dirty seems to only be set on actual user actions
-        if (!this.$element.is('.oe_form_dirty')) {
-            return true;
-        }
-        // Otherwise validate internal form
-        return _(form.fields).chain()
-            .invoke(function () {
-                this.validate();
-                this.update_dom(true);
-                return this.is_valid();
-            })
-            .all(_.identity)
-            .value();
-    },
-    first_edition_form: function () {
-        var get_form = function (group_or_list) {
-            if (group_or_list.edition) {
-                return group_or_list.edition_form;
-            }
-            return _(group_or_list.children).chain()
-                .map(get_form)
-                .compact()
-                .first()
-                .value();
-        };
-        return get_form(this.groups);
-    },
-    reload_record: function (record) {
-        // Evict record.id from cache to ensure it will be reloaded correctly
-        //this.dataset.evict_from_cache(record.get('id'));
-
-        return this._super(record);
-    }
-});
 openerp.web.ListFormView = openerp.web.FormView.extend({
     form_template: 'ListView.row.form',
     template: 'EmptyRow',
@@ -3726,9 +3674,9 @@ openerp.web.ListFormView = openerp.web.FormView.extend({
             this.fields_view = data;
             var frame = new (openerp.web.form.WidgetFrameList)(this, this.fields_view.arch);
 
-            this.rendered = QWeb.render(this.form_template, { 'frame': frame, 'widget': this });
+            var rendered = QWeb.render(this.form_template, { 'frame': frame, 'widget': this });
         }
-        this.$element.html(this.rendered);
+        this.$element.html(rendered);
         this.$element.bind('mousedown.formBlur', function () {
                             self.__clicked_inside = true;
                         })
@@ -3936,7 +3884,7 @@ openerp.web.form.FieldMany2Many = openerp.web.form.Field.extend({
         this.dataset.on_unlink.add_last(function(ids) {
             self.on_ui_change();
         });
-        
+
         this.is_setted.then(function() {
             self.load_view();
         });
@@ -4415,7 +4363,7 @@ openerp.web.form.FormOpenPopup = openerp.web.OldWidget.extend(/** @lends openerp
             });
             if (self.options.readonly) {
                 $nbutton.hide();
-                $cbutton.text(_t("Close"));
+                $cbutton.attr('title',_t("Close"));
             }
             self.$element.parent().find('a.ui-dialog-titlebar-close').bind('click',function(event){
                 self.stop();
@@ -4433,6 +4381,7 @@ openerp.web.form.FormOpenPopup = openerp.web.OldWidget.extend(/** @lends openerp
                 dialog_par.splice(dialog_par.indexOf(_.last(dialog_par.filter(function(d) {return d.element_id===self.element_id}))),1);
             }
         }
+        this.$element.dialog('destroy');
         this._super();
     },
 });
@@ -4531,11 +4480,19 @@ openerp.web.form.FieldBinary = openerp.web.form.Field.extend({
         this.binary_value = false;
     },
     start: function() {
+        var self = this;
         this._super.apply(this, arguments);
-        this.$element.find('input.oe-binary-file').change(this.on_file_change).click(this.on_file_change);
+        if (this.field.uploadfolder) {
+            self.$element.on('change', 'input.oe-binary-file', self.do_upload);
+        }
+        else {
+            this.$element.find('input.oe-binary-file').change(this.on_file_change).click(this.on_file_change);
+        }
         this.$element.find('button.oe-binary-file-save').click(this.on_save_as);
         this.$element.find('.oe-binary-file-clear').click(this.on_clear);
         this.$element.find('.oe-binary-file-open').click(this.on_file_open);
+        self.$element.on('change', 'input.oe-binary-file12', self.on_file_change);
+        self.$field_image = self.$element.find('input.field_image');
     },
     human_filesize : function(size) {
         var units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
@@ -4571,6 +4528,52 @@ openerp.web.form.FieldBinary = openerp.web.form.Field.extend({
             this.$element.find('.oe-binary-progress').show();
             this.$element.find('.oe-binary').hide();
         }
+    },
+    do_upload: function(e) {
+        var self = this;
+        this.$element.find('input[name="session_id"]').val(self.session.session_id);
+        var formData = new FormData(self.$element.find('form')[0]);
+        formData.append('active_id', self.view.datarecord.id);
+        formData.append('field_name', self.name);
+        formData.append('uploadfolder', self.field.uploadfolder);
+        formData.append('active_model', self.view.dataset.model);
+        formData.append('values', JSON.stringify(self.view.get_fields_values()));
+        $.ajax({
+            url: '/web/binary/upload_image',  //Server script to process data
+            type: 'POST',
+            xhr: function() {  // Custom XMLHttpRequest
+                var myXhr = $.ajaxSettings.xhr();
+                if(myXhr.upload){ // Check if upload property exists
+                    myXhr.upload.addEventListener('progress',progressHandlingFunction, false); // For handling the progress of the upload
+                }
+                return myXhr;
+            },
+            //Ajax events
+            success: function(response) {
+                self.on_image_uploaded(response);
+                self.on_ui_change();
+            },
+            //error: errorHandler,
+            // Form data
+            data: formData,
+            //Options to tell jQuery not to process data or worry about content-type.
+            cache: false,
+            contentType: false,
+            processData: false
+        }).done(function(link){
+            dirs = link.split('/')
+            show_value = dirs[dirs.length - 1];
+            self.$element.find('input').eq(0).val(show_value);
+        });
+        function progressHandlingFunction(e){
+            if(e.lengthComputable){
+                $('progress').attr({value:e.loaded,max:e.total});
+            }
+        }
+    },
+    on_image_uploaded: function(response) {
+        var self = this;
+        self.set_value(response);
     },
     on_file_uploaded: function(size, name, content_type, file_base64) {
         delete(window[this.iframe]);
@@ -4636,6 +4639,10 @@ openerp.web.form.FieldBinaryFile = openerp.web.form.FieldBinary.extend({
         } else {
             show_value = (value != null && value !== false) ? value : '';
         }
+        if (!show_value && value) {
+            dirs = value.split('/')
+            show_value = dirs[dirs.length - 1];
+        }
         this.$element.find('input').eq(0).val(show_value);
     },
     on_file_uploaded_and_valid: function(size, name, content_type, file_base64) {
@@ -4655,37 +4662,237 @@ openerp.web.form.FieldBinaryFile = openerp.web.form.FieldBinary.extend({
 openerp.web.form.FieldBinaryImage = openerp.web.form.FieldBinary.extend({
     template: 'FieldBinaryImage',
     start: function() {
+        var self = this;
         this._super.apply(this, arguments);
         this.$image = this.$element.find('img.oe-binary-image');
+        // this.$image = this.$element.find('.image_link img');
+        this.$input = this.$element.find("input[type='text']");
+        self.$img = self.$element.find('img');
+        //self.$img[0].style.display = 'none';
+        self.$lock = self.$element.find('span.qty_locker');
+        self.$lock.click(function(e) {
+            self.toggle_lock(e);
+        });
+        self.$image_open = self.$element.find('span.ea_gallery_button');
+        self.$image_open.click(function(e) {
+            self.open_image_picker(e);
+        });
     },
     update_dom: function() {
+        var self = this;
         this._super.apply(this, arguments);
         this.$element.find('.oe-binary').toggle(!this.is_readonly());
     },
     set_value: function(value) {
+        var self = this;
         this._super.apply(this, arguments);
         this.set_image_maxwidth();
-        var url = '/web/binary/image?session_id=' + this.session.session_id + '&model=' +
-            this.view.dataset.model +'&id=' + (this.view.datarecord.id || '') + '&field=' + this.name + '&t=' + (new Date().getTime());
+        if (self.field.uploadfolder) {
+            var url = '/web/binary/get/' + value + '?db=' + self.session.db;
+        }
+        else {
+            var url = '/web/binary/image?session_id=' + this.session.session_id + '&model=' +
+                this.view.dataset.model +'&id=' + (this.view.datarecord.id || '') + '&field=' + this.name + '&t=' + (new Date().getTime());
+        }
+        if (value == 'false' || value == false) {
+            var res = ''
+        }
+        else {
+            var res = value || ''
+        }
+        this.$input.val(res);
         this.$image.attr('src', url);
     },
     set_image_maxwidth: function() {
-        this.$image.css('max-width', this.$element.width());
-    },
-    on_file_change: function() {
-        this.set_image_maxwidth();
-        this._super.apply(this, arguments);
+        this.$image.css('max-width', Math.min(this.$image.innerWidth(),this.$element.innerWidth()));
     },
     on_file_uploaded_and_valid: function(size, name, content_type, file_base64) {
+        var self = this;
         this.value = file_base64;
         this.binary_value = true;
-        this.$image.attr('src', 'data:' + (content_type || 'image/png') + ';base64,' + file_base64);
+        if (self.field.uploadfolder == null) {
+            this.$image.attr('src', 'data:' + (content_type || 'image/png') + ';base64,' + file_base64);
+        }
         this.set_filename(name);
     },
     on_clear: function() {
         this._super.apply(this, arguments);
         this.$image.attr('src', '/web/static/src/img/placeholder.png');
         this.set_filename('');
+    },
+    toggle_lock: function(e) {
+        var self = this;
+        self.$lock.toggleClass('icon-lock icon-unlock');
+        self.widget_parent.widgets[self.name + '_lock'].set_value(!self.widget_parent.widgets[self.name + '_lock'].value);
+        self.widget_parent.do_save_line();
+    },
+    open_image_picker: function(e) {
+        var self = this;
+        if (self.field.uploadfolder) {
+            var image_path = this.$element.find("input[type='text']").val();
+        }
+        else {
+            var image_path = self.get_value() || '';
+        }
+        image_path = image_path.replace(/^\//, '');
+        self.image_dialog = new openerp.web.ImagePicker(image_path, self.field.image_size);
+        self.image_dialog.parent = self;
+        self.image_dialog.open();
+    },
+});
+
+openerp.web.ImagePicker = openerp.web.Dialog.extend({
+    template: 'ImagePicker',
+    init: function(path, image_size) {
+        var self = this;
+        self._super();
+        self.current_image_path = path;
+        self.image_size = image_size;
+        self.set_dir(path);
+        self.$element.delegate(':input', 'keypress', function(e){
+            if (e.which == 13) {
+                self.set_dir(self.$element.find('input[name="current_image_path"]').val());
+            }
+        });
+        self.$element.delegate(':button', 'click', function(){
+            var formData = new FormData(self.$element.find('form')[0]);
+            formData.append('relative_dir', self.relative_dir);
+            $.ajax({
+                url: '/web/images_list/upload',  //Server script to process data
+                type: 'POST',
+                xhr: function() {  // Custom XMLHttpRequest
+                    var myXhr = $.ajaxSettings.xhr();
+                    if(myXhr.upload){ // Check if upload property exists
+                        myXhr.upload.addEventListener('progress',progressHandlingFunction, false); // For handling the progress of the upload
+                    }
+                    return myXhr;
+                },
+                //Ajax events
+                success: function(response) {
+                    self.complete_upload(response);
+                },
+                //error: errorHandler,
+                // Form data
+                data: formData,
+                //Options to tell jQuery not to process data or worry about content-type.
+                cache: false,
+                contentType: false,
+                processData: false
+            });
+        function progressHandlingFunction(e){
+            if(e.lengthComputable){
+                $('progress').attr({value:e.loaded,max:e.total});
+            }
+        }
+        });
+    },
+    complete_upload: function(response) {
+        var self = this;
+        if (response) {
+            self.set_dir(self.relative_dir);
+            self.set_file(response);
+        }
+    },
+    set_dir: function(path) {
+        var self = this;
+        self.rpc('/web/images_list/get', {
+            path: path,
+            image_size: self.image_size,
+        }, function () { }).then(function (response) {
+            self.render_dir(response);
+        }, function () {
+        });
+    },
+    set_file: function(file_name){
+        var self = this;
+        self.$element.find('input[name="current_image_path"]').val(file_name);
+    },
+    on_close: function(e) {
+        var self = this;
+        self.parent.set_value(self.$element.find('input[name="current_image_path"]').val());
+        self.parent.on_ui_change();
+    },
+    join_path: function(directory_name, file_name) {
+        return directory_name && directory_name + '/' + file_name || file_name;
+    },
+    render_dir: function(response) {
+        var self = this;
+        file_path = self.join_path(response.dir_path, response.file_path);
+        self.set_file(file_path);
+        self.relative_dir = response.dir_path;
+        self.parent_dir = response.parent_dir;
+        self.directory_list && self.directory_list.stop();
+        self.directory_list = new openerp.web.ImagePicker.directory_list(response.directories);
+        self.directory_list.picker = self;
+        self.directory_list.appendTo(self.$element.find('.image_picker'));
+        self.file_list && self.file_list.stop();
+        self.file_list = new openerp.web.ImagePicker.file_list(response.files);
+        self.file_list.picker = self;
+        self.file_list.appendTo(self.$element.find('.image_picker'));
+    }
+});
+
+openerp.web.ImagePicker.List = openerp.web.Widget.extend({
+    init: function(item_list) {
+        var self = this;
+        self._super();
+        self.item_objects = [];
+        _.each(item_list, function(item_path) {
+            var name = _.first(item_path.split('?'));
+            if (name.substr(-1) == '/') {
+                var name = name.substr(0, name.length - 1);
+            };
+            self.item_objects.push({
+                'name': _.last(name.split('/')),
+                'path': item_path
+            });
+        });
+    },
+
+})
+
+openerp.web.ImagePicker.directory_list = openerp.web.ImagePicker.List.extend({
+    template: 'ImagePickerDirectoryList',
+    start: function(dir_list) {
+        var self = this;
+        self._super();
+        self.$element
+        .delegate('li', 'click', function(e) {
+            self.on_dir_clicked(e);
+        });
+    },
+    on_dir_clicked: function(e) {
+        var self = this;
+        self.picker.set_dir(e.target.attributes.title.value);
+    }
+});
+
+openerp.web.ImagePicker.file_list = openerp.web.ImagePicker.List.extend({
+    template: 'ImagePickerFileList',
+    start: function(file_list) {
+        var self = this;
+        self._super();
+        self.$element
+        .delegate('div', 'click', function(e) {
+            self.on_file_clicked(e);
+        })
+        .delegate('div', 'dblclick', function(e) {
+            self.on_file_dblclicked(e);
+        });
+    },
+    on_file_clicked: function(e) {
+        var self = this;
+        self.$element.find('div').removeClass('selected');
+        $(e.currentTarget).addClass('selected');
+    },
+    on_file_dblclicked: function(e) {
+        var self = this;
+        var current_file = e.currentTarget.innerText;
+        var current_image_path = self.picker.$element.find('input[name="current_image_path"]').val();
+        self.on_file_clicked(e);
+        var file_name = self.picker.join_path(current_image_path.slice(0, current_image_path.length - 1), e.currentTarget.innerText);
+        self.picker.set_file(file_name);
+        self.picker.close();
     }
 });
 
@@ -4741,6 +4948,7 @@ openerp.web.form.FieldStatus = openerp.web.form.Field.extend({
         div.appendTo($("body"));
         var ncolor = div.css("color");
         div.remove();
+        div = null;
         var res = /^\s*rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s*$/.exec(ncolor);
         if (!res) {
             return false;
@@ -4781,6 +4989,14 @@ openerp.web.form.WidgetHtml = openerp.web.form.Widget.extend({
     }
 });
 
+openerp.web.form.WidgetRawHtml = openerp.web.form.Field.extend({
+    set_value: function(value) {
+        var self = this;
+        self._super(value);
+        self.$element.html(value);
+    }
+});
+
 openerp.web.form.SaveReminder = openerp.web.form.Widget.extend({
     template: "SaveReminder",
     init: function(parent, dataset) {
@@ -4802,13 +5018,6 @@ openerp.web.form.SaveReminder = openerp.web.form.Widget.extend({
             })
         ;
         parent.dataset.parent_view.on_saved.add(function(res){self.stop();})
-    },
-    stop: function() {
-        this._super();
-        if (this.$element) {
-            this.$element.remove();
-            delete this.$element;
-        }
     },
     show_content: function(){
         var self = this;
@@ -4850,7 +5059,6 @@ openerp.web.form.widgets = new openerp.web.Registry({
     'id' : 'openerp.web.form.FieldID',
     'email' : 'openerp.web.form.FieldEmail',
     'geolocation' : 'openerp.web.form.FieldGeoLocation',
-    'spinner' : 'openerp.web.form.FieldSpinner',
     'url' : 'openerp.web.form.FieldUrl',
     'text' : 'openerp.web.form.FieldText',
     'wysiwyg' : 'openerp.web.form.FieldTextWysiwyg',
@@ -4871,8 +5079,6 @@ openerp.web.form.widgets = new openerp.web.Registry({
     'image': 'openerp.web.form.FieldBinaryImage',
     'binary': 'openerp.web.form.FieldBinaryFile',
     'statusbar': 'openerp.web.form.FieldStatus',
-    'html': 'openerp.web.form.WidgetHtml'
+    'html': 'openerp.web.form.WidgetHtml',
+    'raw_html': 'openerp.web.form.WidgetRawHtml'
 });
-
-
-};

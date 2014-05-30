@@ -4,6 +4,9 @@ Enapps openerp server could be found [here](https://github.com/enapps/enapps-ope
 *Click the image to see it in action:*
 
 [![Enapps server/ web client public release](http://img.youtube.com/vi/7aJPrmKQMcM/0.jpg)](http://www.youtube.com/watch?v=7aJPrmKQMcM&feature=youtu.be)
+####Second release:
+[![Enapps server/ web client public release](http://img.youtube.com/vi/W6eoLDORGWQ/0.jpg)](https://www.youtube.com/watch?v=W6eoLDORGWQ&feature=youtu.be)
+
 
 ###Installation (*from scratch*) on machine running UBUNTU OS
 ***
@@ -48,24 +51,7 @@ Enapps openerp server could be found [here](https://github.com/enapps/enapps-ope
         $ git clone https://github.com/enapps/enapps-openerp-server.git ea_server
         $ git clone https://github.com/enapps/enapps-web-client.git ea_web
 
-8. Install additional software for web client:
-
-        $ cd /opt/openerp/ea_web
-        $ git clone https://github.com/joyent/node.git
-        $ cd node
-        $ sudo apt-get install g++
-        $ sudo apt-get install make
-        $ ./configure && make && sudo make -j 4 install
-        $ sudo apt-get install ruby1.8 ruby1.8-dev irb rdoc ri
-        $ sudo apt-get install rubygems
-        $ sudo gem install sass
-        $ sudo npm install (installs all node dependecies)
-          Optional (*if you have issues with the package.json*):
-            $ sudo npm install -g grunt-cli
-            $ sudo npm install grunt-contrib-sass --save-dev
-        $ grunt --theme=v7_t or grunt --theme=v6 # Specify theme you would like to use.
-
-9. Create bootup script.
+8. Create bootup script.
     This will use default openerp confiduration file located in `/opt/openerp/ea_server/install/openerp-server.conf`. Edit it to enter your database password, modules location and other options:
 
         $ sudo cp /opt/openerp/ea_server/install/openerp-server /etc/init.d/
@@ -73,7 +59,7 @@ Enapps openerp server could be found [here](https://github.com/enapps/enapps-ope
         $ sudo chown root: /etc/init.d/openerp-server
         $ sudo update-rc.d openerp-server defaults
 
-10. Finally start the server:
+9. Finally start the server:
         $ sudo /etc/init.d/openerp-server start
 
 ----
@@ -91,3 +77,4 @@ While restoring/cloning database there are few additional options:
 * *__Replace all emails:__* -- if checked will replace all emails in new DB to one enterd further;
 *  *__Replace all passwords__* -- if checked will change all users passwords to one enterd further;
 *  *__Disable all crons__* -- if checked will disable all schedulers.
+

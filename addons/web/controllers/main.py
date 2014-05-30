@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import ast
+import tempfile
 import base64
 import csv
 import glob
@@ -21,10 +22,15 @@ from functools import wraps
 import subprocess
 from xml.etree import ElementTree
 from cStringIO import StringIO
+try:
+    import cups
+except ImportError:
+    cups = None
 
 import babel.messages.pofile
 import werkzeug.utils
 import werkzeug.wrappers
+import mimetypes
 from werkzeug.contrib.securecookie import SecureCookie
 try:
     import xlwt
@@ -34,8 +40,10 @@ except ImportError:
 from .. import common
 openerpweb = common.http
 from tools import config
+from tools.safe_eval import safe_eval as eval
 
 SECRET_KEY = os.urandom(20)
+IMAGES_STORE_ROOT = config.options['images_root']
 
 
 def admin_required(f):
@@ -130,14 +138,13 @@ class WebClient(openerpweb.Controller):
         <head>
             <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
             <meta http-equiv="content-type" content="text/html; charset=utf-8" />
-            <title>OpenERP</title>
+            <title>Enapps</title>
             <link rel="shortcut icon" href="/web/static/src/img/favicon.ico" type="image/x-icon"/>
             <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&sensor=false"></script>
             %(css)s
-            <link href="/web/static/build/css/style.css" rel="stylesheet" type="text/css">
             %(js)s
             <script type="text/javascript">
-                $(function() {
+                $(document).ready(function() {
                     var s = new openerp.init(%(modules)s);
                     %(init)s
                 });
@@ -146,7 +153,9 @@ class WebClient(openerpweb.Controller):
         <body class="openerp" id="oe"></body>
     </html>
     """
-    init_string = 'new s.web.WebClient().start();';
+    init_string = '''var wc = new s.web.WebClient();
+wc.appendTo($(document.body));
+    ''';
 
     def server_wide_modules(self, req):
         addons = [i for i in req.config.server_wide_modules if i in openerpweb.addons_manifest]
@@ -266,6 +275,7 @@ class WebClient(openerpweb.Controller):
                 r"""url(\1%s/""" % (web_dir,),
                 data,
             )
+            #"""
             return data.encode('utf-8')
 
         content, checksum = concat_files((f[0] for f in files), reader)
@@ -1066,7 +1076,6 @@ class DataSet(openerpweb.Controller):
         records = Model.read(ids, fields, req.session.eval_context(req.context))
 
         record_map = dict((record['id'], record) for record in records)
-
         return [record_map[id] for id in ids if record_map.get(id)]
 
     @openerpweb.jsonrequest
@@ -1199,10 +1208,10 @@ class View(openerpweb.Controller):
     _cp_path = "/web/view"
 
     def fields_view_get(self, req, model, view_id, view_type,
-                        transform=True, toolbar=False, submenu=False):
+                        transform=True, toolbar=False, submenu=False, action_id=None):
         Model = req.session.model(model)
         context = req.session.eval_context(req.context)
-        fvg = Model.fields_view_get(view_id, view_type, context, toolbar, submenu)
+        fvg = Model.get_view(view_id, view_type, context, toolbar, submenu, action_id=action_id)
         # todo fme?: check that we should pass the evaluated context here
         self.process_view(req.session, fvg, context, transform, (view_type == 'kanban'))
         if toolbar and transform:
@@ -1319,8 +1328,8 @@ class View(openerpweb.Controller):
                 elem.set(el + '_string', context_string)
 
     @openerpweb.jsonrequest
-    def load(self, req, model, view_id, view_type, toolbar=False):
-        return self.fields_view_get(req, model, view_id, view_type, toolbar=toolbar)
+    def load(self, req, model, view_id, view_type, toolbar=False, action_id=None):
+        return self.fields_view_get(req, model, view_id, view_type, toolbar=toolbar, action_id=action_id)
 
 def parse_domain(domain, session):
     """ Parses an arbitrary string containing a domain, transforms it
@@ -1375,20 +1384,6 @@ class ListView(View):
         elif len(color) == 1:
             return color[0]
         return 'maroon'
-
-    @openerpweb.jsonrequest
-    def load_contex_menu(self, req, model_name):
-        result = {}
-        ir_action_object_model = req.session.model('ir.actions.object')
-        ir_action_window_model = req.session.model('ir.actions.act_window')
-        window_action_ids = ir_action_window_model.search(
-            [('context_menu', '=', True), ('src_model', '=', model_name)])
-        result['act_window'] = ir_action_window_model.read(window_action_ids, context=req.session.eval_context(req.context))
-        object_action_ids = ir_action_object_model.search(
-            [('model_name', '=', model_name)],
-            context=req.session.eval_context(req.context))
-        result['act_object'] = ir_action_object_model.read(object_action_ids, context=req.session.eval_context(req.context))
-        return result
 
     @openerpweb.jsonrequest
     def run_object_action(self, req, action_id, res_ids):
@@ -1515,6 +1510,26 @@ class Binary(openerpweb.Controller):
     _cp_path = "/web/binary"
 
     @openerpweb.httprequest
+    def get(self, req, *args, **kw):
+        image_path = req.httprequest.path.replace(self._cp_path + '/get/', '')
+        db_name = kw.get('db', '')
+        if getattr(db_name, 'startswith')('/'):
+            db_name = db_name[1:]
+        image_full_path = os.path.join(IMAGES_STORE_ROOT, db_name, image_path)
+        if getattr(image_full_path, 'endswith')('/'):
+            image_full_path = image_full_path[:-1]
+        if os.path.isfile(image_full_path):
+            mime_type, encoding = mimetypes.guess_type(image_full_path)
+            image_fh = open(image_full_path, 'rb')
+        else:
+            mime_type, encoding = mimetypes.guess_type(self.get_place_holder_path())
+            image_fh = self.placeholder(req)
+        headers = [
+            ('Content-Type', mime_type),
+        ]
+        return req.make_response(image_fh, headers)
+
+    @openerpweb.httprequest
     def image(self, req, model, id, field, **kw):
         Model = req.session.model(model)
         context = req.session.eval_context(req.context)
@@ -1525,7 +1540,6 @@ class Binary(openerpweb.Controller):
                 res = Model.read([int(id)], [field], context)[0].get(field)
             image_data = base64.b64decode(res)
         except (TypeError, xmlrpclib.Fault):
-            print 'IS LOGO ', field == 'logo_web'
             if field == 'avatar' and ('avatar' in kw) and kw.get('avatar')=='1':
                 image_data = self.default_image(req,'avatar')
             elif field == 'logo_web':
@@ -1534,13 +1548,19 @@ class Binary(openerpweb.Controller):
                 image_data = self.placeholder(req)
         return req.make_response(image_data, [
             ('Content-Type', 'image/png'), ('Content-Length', len(image_data))])
+
     def default_image(self,req, title):
         images = {'avatar': 'user_menu_avatar.png', 'logo_web': 'logo.png'}
         addons_path = openerpweb.addons_manifest['web']['addons_path']
         return open(os.path.join(addons_path, 'web', 'static', 'src', 'img', images[title]), 'rb').read()
+
     def placeholder(self, req):
-        addons_path = openerpweb.addons_manifest['web']['addons_path']
-        return open(os.path.join(addons_path, 'web', 'static', 'src', 'img', 'placeholder.png'), 'rb').read()
+        return open(self.get_place_holder_path(), 'rb').read()
+
+    def get_place_holder_path(self):
+        return os.path.join(openerpweb.addons_manifest['web']['addons_path'],
+                             'web', 'static', 'src', 'img', 'placeholder.png')
+
     def content_disposition(self, filename, req):
         filename = filename.encode('utf8')
         escaped = urllib2.quote(filename)
@@ -1678,6 +1698,7 @@ class Binary(openerpweb.Controller):
     def upload_attachment(self, req, callback, model, id, ufile):
         context = req.session.eval_context(req.context)
         Model = req.session.model('ir.attachment')
+        context['sidebar_attachment'] = True
         try:
             out = """<script language="javascript" type="text/javascript">
                         var win = window.top.window,
@@ -1688,7 +1709,7 @@ class Binary(openerpweb.Controller):
                     </script>"""
             attachment_id = Model.create({
                 'name': ufile.filename,
-                'datas': base64.encodestring(ufile.read()),
+                'datas': ufile.read(),
                 'datas_fname': ufile.filename,
                 'res_model': model,
                 'res_id': int(id)
@@ -1700,6 +1721,14 @@ class Binary(openerpweb.Controller):
         except Exception, e:
             args = { 'error': e.message }
         return out % (simplejson.dumps(callback), simplejson.dumps(args))
+
+    @openerpweb.httprequest
+    def upload_image(self, req, ufile, active_id, field_name, uploadfolder, active_model, values, **kw):
+        values = simplejson.loads(values)
+        context = req.session.eval_context(req.context)
+        Model = req.session.model(active_model)
+        filename = Model.upload_image(active_id, values, field_name, uploadfolder, ufile, context=context)
+        return filename
 
 class Action(openerpweb.Controller):
     _cp_path = "/web/action"
@@ -2030,10 +2059,33 @@ class Reports(View):
     @openerpweb.httprequest
     def index(self, req, action, token):
         action = simplejson.loads(action)
+        report, report_format = self.get_report(req, action)
+        report_mimetype = self.TYPES_MAPPING.get(
+            report_format, 'octet-stream')
+        if action.get('report_type') != 'webkit':
+            # Temporary fix; webkit reports are not opened in new tab, they are saved
+            action['do_open']
+            headers = [
+                ('Content-Disposition', 'filename="%s.%s"' % (action['report_name'], report_format)),
+                ('Content-Type', report_mimetype),
+            ]
+        else:
+            headers = [
+                ('Content-Disposition', 'inline; filename="%s.%s"' % (action['report_name'], report_format)),
+                ('Content-Type', report_mimetype),
+                ('Content-Length', len(report))]
+        return req.make_response(report, headers, )
+
+    @openerpweb.jsonrequest
+    def direct_print(self, req, action):
+        report, report_format = self.get_report(req, action)
+        return {'message': "File %s.%s send to printer" % (action['report_name'], report_format, )}
+
+    def get_report(self, req, action):
         report_srv = req.session.proxy("report")
         context = req.session.eval_context(
             common.nonliterals.CompoundContext(
-                req.context or {}, action[ "context"]))
+                req.context or {}, action["context"]))
         report_data = {}
         report_ids = context["active_ids"]
         if 'report_type' in action:
@@ -2058,21 +2110,14 @@ class Reports(View):
         report = base64.b64decode(report_struct['result'])
         if report_struct.get('code') == 'zlib':
             report = zlib.decompress(report)
-        report_mimetype = self.TYPES_MAPPING.get(
-            report_struct['format'], 'octet-stream')
-        if action.get('report_type') != 'webkit':
-            # Temprorary fix; webkit reports are not opened in new tab, they are saved
-            action['do_open']
-            headers=[
-                ('Content-Disposition', 'filename="%s.%s"' % (action['report_name'], report_struct['format'])),
-                ('Content-Type', report_mimetype),
-             ]
-        else:
-            headers=[
-                ('Content-Disposition', 'attachment; filename="%s.%s"' % (action['report_name'], report_struct['format'])),
-                ('Content-Type', report_mimetype),
-                ('Content-Length', len(report))]
-        return req.make_response(report, headers, )
+        if req.httprequest.headers.get('Referer', '').count('/web/webclient/home') and action.get('direct_print') and cups:
+            report_file = tempfile.NamedTemporaryFile(delete=False)
+            report_file.write(report)
+            report_file.close()
+            printer_name = req.session.model('res.users').read([req.session._uid, ], fields=['printer'])[0]['printer']
+            if printer_name:
+                cups.Connection().printFile(printer_name, report_file.name, action['report_name'], {})
+        return report, report_struct['format']
 
 class Import(View):
     _cp_path = "/web/import"
@@ -2195,7 +2240,7 @@ class DBAdmin(WebClient):
         <head>
             <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
             <meta http-equiv="content-type" content="text/html; charset=utf-8" />
-            <title>OpenERP</title>
+            <title>Enapps</title>
             <link rel="shortcut icon" href="/web/static/src/img/favicon.ico" type="image/x-icon"/>
             %(css)s
             <link href="/web/static/build/css/style.css" rel="stylesheet" type="text/css">
@@ -2216,7 +2261,7 @@ class DBAdmin(WebClient):
     login_templete = """<html style="height: 100%"><head>
         <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
         <meta http-equiv="content-type" content="text/html; charset=utf-8">
-        <title>OpenERP Manage Databases</title>
+        <title>Enapps Manage Databases</title>
         <link rel="shortcut icon" href="/web/static/src/img/favicon.ico" type="image/x-icon">
         <link rel="stylesheet" href="/web/webclient/css">
         <link rel="stylesheet" href="/web/static/build/css/style.css">
@@ -2264,5 +2309,57 @@ class DBAdmin(WebClient):
             return self.login_templete
         #return werkzeug.utils.redirect(self._cp_path)
 
+
+class ImagePicker(openerpweb.Controller):
+    _cp_path = "/web/images_list"
+    web_image_root = '/web/binary/get'
+
+    @openerpweb.jsonrequest
+    def get(self, req, path, image_size):
+        root_path = os.path.join(IMAGES_STORE_ROOT, req.session._db)
+        current_path = os.path.join(root_path, path)
+        file_path = ''
+        relative_dir_path = path
+        if os.path.exists(current_path):
+            if os.path.isfile(current_path):
+                relative_dir_path = '/'.join(path.split('/')[:-1])
+                # file_path = path.split('/')[-1]
+            else:
+                relative_dir_path = path
+        result = {
+            'directories': [],
+            'files': [],
+            'dir_path': relative_dir_path,
+            'file_path': file_path,
+            'parent_dir': '/'.join(relative_dir_path.split('/')[:-1]),
+        }
+        current_dir = os.path.join(root_path, relative_dir_path)
+        if not os.path.exists(current_dir):
+            relative_dir_path = '/'.join(getattr(relative_dir_path, 'split')('/')[:-1])
+        for pth in os.listdir(os.path.join(root_path, relative_dir_path)):
+            dir_path = os.path.join(relative_dir_path, pth) if relative_dir_path else pth
+            if os.path.isdir(os.path.join(root_path, dir_path)) and dir_path:
+                result['directories'].append(dir_path)
+            else:
+                if pth[:5] == 'tmbl_':
+                    result['files'].append(os.path.join(self.web_image_root, relative_dir_path, pth, '?db=', req.session._db))
+                elif not os.path.exists(os.path.join(root_path, relative_dir_path, 'tmbl_' + os.path.splitext(pth)[0] + '.jpg')):
+                    for size in getattr(image_size, 'split')(','):
+                        if self.convert_file(os.path.join(root_path, relative_dir_path, pth), os.path.join(root_path, relative_dir_path, 'tmbl_' + os.path.splitext(pth)[0] + '.jpg'), size):
+                            result['files'].append(os.path.join(self.web_image_root, relative_dir_path, 'tmbl_' + os.path.splitext(pth)[0] + '.jpg' + '?db_name=' + req.session._db))
+        result['files'].sort()
+        result['directories'].sort()
+        return result
+
+    def convert_file(self, in_file, out_file, image_size):
+        return not subprocess.call(['convert', in_file, '-resize', image_size, '+profile', '"*"', '-colorspace', 'RGB', out_file])
+
+    @openerpweb.httprequest
+    def upload(self, req, file_upload=None, relative_dir=''):
+        root_path = os.path.join(IMAGES_STORE_ROOT, req.session._db)
+        if file_upload:
+            file_upload.save(os.path.join(root_path, relative_dir, file_upload.filename))
+            return 'tmbl_' + os.path.splitext(file_upload.filename)[0] + '.jpg'
+        return ''
 
 # vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:

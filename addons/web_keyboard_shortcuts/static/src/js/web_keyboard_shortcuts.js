@@ -85,7 +85,7 @@ $.ctrl('34', function() {
 // ListView listeners
 $(document).keydown(function(event) {
     if ($.mobile) return;
-    with(window.openerp.sessions.session0.webclient.action_manager) {
+    with(window.openerp.webclient.action_manager) {
     if(inner_viewmanager!=null && inner_viewmanager.active_view==="list"){
         var delay = (function(){
                 var timer = 0;
@@ -96,8 +96,8 @@ $(document).keydown(function(event) {
             })();
         var fire_keydown_action = (function(e) {
         try{
-            var _id = window.openerp.sessions.session0.webclient.action_manager.inner_viewmanager.element_id,
-            _viewmanager = _.find(window.openerp.sessions.session0.webclient.action_manager.widget_children,function(el) {
+            var _id = window.openerp.webclient.action_manager.inner_viewmanager.element_id,
+            _viewmanager = _.find(window.openerp.webclient.action_manager.widget_children,function(el) {
                 return el.element_id===_id;
             });
             var list_widget = _.find(_viewmanager.widget_children, function(widget) {return widget.__template__==="ListView"});

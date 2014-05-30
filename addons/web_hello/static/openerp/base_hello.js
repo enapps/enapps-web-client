@@ -2,7 +2,7 @@
  * OpenERP base_hello (Example module)
  *---------------------------------------------------------*/
 
-openerp.web_hello = function(openerp) {
+openerp.web_hello = {};
 
 openerp.web.SearchView = openerp.web.SearchView.extend({
     init:function() {
@@ -19,7 +19,5 @@ openerp.web.Login = openerp.web.Login.extend({
         this._super.apply(this,arguments);
     }
 });
-
-};
 
 // vim:et fdc=0 fdl=0:

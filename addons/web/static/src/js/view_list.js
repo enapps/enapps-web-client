@@ -1,4 +1,4 @@
-openerp.web.list = function (openerp) {
+openerp.web.list = {};
 var _t = openerp.web._t,
    _lt = openerp.web._lt;
 var QWeb = openerp.web.qweb;
@@ -221,13 +221,6 @@ openerp.web.ListView = openerp.web.View.extend( /** @lends openerp.web.ListView#
 
         this.$element.html(QWeb.render(this._template, this));
         // Head hook
-        this.$element.find('.all-record-selector').click(function(){
-            self.$element.find('.oe-record-selector input').prop('checked',
-                self.$element.find('.all-record-selector').prop('checked')  || false);
-            var selection = self.groups.get_selection();
-            $(self.groups).trigger(
-                'selected', [selection.ids, selection.records]);
-        });
         this.$element.find('.oe-list-add')
                 .click(this.proxy('do_add_record'))
                 .attr('disabled', grouped && this.options.editable);
@@ -488,7 +481,8 @@ openerp.web.ListView = openerp.web.View.extend( /** @lends openerp.web.ListView#
                 view_id: this.view_id,
                 view_type: "tree",
                 context: this.dataset.get_context(context),
-                toolbar: this.options.sidebar
+                toolbar: this.options.sidebar,
+                action_id: self.widget_parent && self.widget_parent.action && self.widget_parent.action.id
             }, callback);
         }
     },
@@ -891,7 +885,9 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
         this.lastSelection;
         this.ctxt_menu_id = _.uniqueId('tr_contextMenu_');
         this.timer_to_close_ctxtmenu;
-        this.load_context_menu_items();
+        if (!self.view.fields_view.context_menu && self.dataset.parent_view) {
+            self.view.fields_view.context_menu = self.dataset.parent_view.fields[self.dataset.child_name].field.context_menu;
+        }
         this.record_callbacks = {
             'remove': function (event, record) {
 
@@ -906,7 +902,6 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
                 var $row = self.$current.find('[data-id=' + record.get('id') + ']');
                 var oldClass = $row.attr('class');
                 $row.replaceWith($(self.render_record(record)).addClass(oldClass));
-                self.dataset.parent_view && self.dataset.parent_view.$element.is(':visible') && group.re_adjust_edition_form();
             },
             'add': function (ev, records, record, index) {
                 var $new_row = $('<tr>').attr({
@@ -994,27 +989,6 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
                 return false;
             });
     },
-    load_context_menu_items: function() {
-        var self = this,
-            menu_model = self.view.model;
-        if (
-            (!!self.view.o2m && self.view.o2m.invisible!==true)
-            ||
-            (!!self.view.m2m && !!self.view.m2m.node.attrs.invisible && !self.view.m2m.node.attrs.invisible=="0")
-            ||
-            (!self.view.o2m && !self.view.m2m)
-            )
-        return self.view.rpc('/web/listview/load_contex_menu', {
-                model_name: self.view.model,
-                context: {}
-            }, function(response) {
-                self.on_context_menu_items_loaded(response);
-            });
-    },
-    on_context_menu_items_loaded: function(response) {
-        var self = this;
-        self.context_menu_items = response;
-    },
     get_selected_dataIds: function(e) {
         var selected_rows = [];
         _.each($(e.target).closest('tbody').find('.selected'), function(el) {
@@ -1056,7 +1030,7 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
                 return;
             };
             bindings[self.ctxt_menu_id + "_do_duplicate"] = function() {
-                if (self.options.editable){
+                if (self.options.editable) {
                     var row_index = $(e.target).closest('tr').index(),
                         sel_rows = self.get_selected_dataIds(e),
                         parent_form = self.view.dataset.parent_view;
@@ -1140,9 +1114,9 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
                 }
             };
 
-            if (!!self.context_menu_items) {
+            if (!!self.view.fields_view.context_menu) {
                     // Adding object items
-                    _.each(self.context_menu_items.act_object, function(item) {
+                    _.each(self.view.fields_view.context_menu.act_object, function(item) {
                     var new_item = $('<li>', {
                             id: self.ctxt_menu_id+item.model_method,
                             text: item.description,
@@ -1152,33 +1126,8 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
                         $cmenu.find('ul').append(new_item);
                     bindings[self.ctxt_menu_id+item.model_method] = function() {
                         changed_records = {};
-                        // _.each(self.dataset.parent_view.fields, function(el,key){
-                        //     changed_records[key] = ((el.dataset && el.dataset.to_write) ? el.dataset.to_write : el.value);
-                        // });
                         var form_saved_def = new $.Deferred(),
                             d = new $.Deferred(),
-                            confirm_save_dialog = $('<p>The form has been changed!  In order proceed with this action you should save the form.\nSave?</p>').dialog({
-                            modal: true,
-                            autoOpen: false,
-                            title: "Save form?",
-                            buttons: {
-                                "Yes": function() {
-                                    confirm_save_dialog.dialog('close');
-                                    d.resolve();
-                                    return d.promise();
-                                },
-                                "No":  function() {
-                                    confirm_save_dialog.dialog('close');
-                                    form_saved_def.resolve();
-                                    return form_saved_def.promise();
-                                },
-                                "Cancel":  function() {
-                                    confirm_save_dialog.dialog('close');
-                                    d.reject();
-                                    return d.promise();
-                                }
-                            }
-                            }),
                             res_ids = self.get_selected_dataIds(e);
                             context = {
                                 active_id: res_ids[0],
@@ -1186,6 +1135,28 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
                                 active_model: self.dataset.model || self.dataset.widget_parent.model
                             };
                         if (self.dataset.parent_view && self.dataset.parent_view.is_dirty()) {
+                            var confirm_save_dialog = $('<p>The form has been changed!  In order proceed with this action you should save the form.\nSave?</p>').dialog({
+                                modal: true,
+                                autoOpen: false,
+                                title: "Save form?",
+                                buttons: {
+                                    "Yes": function() {
+                                        confirm_save_dialog.dialog('close');
+                                        d.resolve();
+                                        return d.promise();
+                                    },
+                                    "No":  function() {
+                                        confirm_save_dialog.dialog('close');
+                                        form_saved_def.resolve();
+                                        return form_saved_def.promise();
+                                    },
+                                    "Cancel":  function() {
+                                        confirm_save_dialog.dialog('close');
+                                        d.reject();
+                                        return d.promise();
+                                    }
+                                }
+                            });
                             confirm_save_dialog.dialog('open');
                             d.then(function(){
                                 $.blockUI();
@@ -1197,7 +1168,7 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
                                 return form_saved_def.promise();
                             })
                         } else {
-                            form_saved_def.resolve(); form_saved_def.promise();
+                            form_saved_def.resolve();
                         }
                         form_saved_def.done(function(){
                             self.run_object_action(item.id, res_ids, context).then(function(result){
@@ -1212,7 +1183,7 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
                     };
                 });
                 // Adding ir_act_window items
-                _.each(self.context_menu_items.act_window, function(item) {
+                _.each(self.view.fields_view.context_menu.act_window, function(item) {
                     var new_item = $('<li>', {
                             id: self.ctxt_menu_id+"act_window"+item.id,
                             text: item.name,
@@ -1465,9 +1436,9 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
                 });
             } else {
                 var $add_row_link = self.$current.find('div.ea_add_newrow');
-                var pos_top = 0;
-                    if (self.$current.find('tr[id^=oe-editable-row]').length!==0) {
-                        var line_edition_form = self.$current.find('tr[id^=oe-editable-row]');
+                var pos_top = 0,
+                    line_edition_form = self.$current.find('.oe_fake_list_row');
+                    if (line_edition_form.length!==0) {
                         pos_top = line_edition_form.position().top+line_edition_form.height();
                     } else if (self.$current.find('tr[data-id]:last').length!==0) {
                         pos_top = last_data_row.position().top+last_data_row.outerHeight();
@@ -1558,7 +1529,11 @@ openerp.web.ListView.List = openerp.web.Class.extend( /** @lends openerp.web.Lis
         if (!this.$current) { return; }
         this.$current.remove();
         this.$current = null;
-        this.$_element.remove();
+        if (this.$_element)
+        {
+            this.$_element.unbind().removeData().remove();
+            this.$_element = null;
+        }
     },
     get_records: function () {
         return this.records.map(function (record) {
@@ -1747,23 +1722,23 @@ openerp.web.ListView.Groups = openerp.web.Class.extend( /** @lends openerp.web.L
         }
         return red_letter_tboday;
     },
+    step_page: function(e, step) {
+        var self = this;
+        e.stopPropagation();
+        self.page += step;
+        self.$row.closest('tbody').next()
+            .replaceWith(self.render());
+        
+    },
     make_paginator: function () {
         var self = this;
         var $prev = $('<button type="button" data-pager-action="previous">&lt;</button>')
             .click(function (e) {
-                e.stopPropagation();
-                self.page -= 1;
-
-                self.$row.closest('tbody').next()
-                    .replaceWith(self.render());
+                self.step_page(e,-1);
             });
         var $next = $('<button type="button" data-pager-action="next">&gt;</button>')
             .click(function (e) {
-                e.stopPropagation();
-                self.page += 1;
-
-                self.$row.closest('tbody').next()
-                    .replaceWith(self.render());
+                self.step_page(e,1);
             });
         this.$row.children().last()
             .append($prev)
@@ -2032,6 +2007,10 @@ openerp.web.ListView.Groups = openerp.web.Class.extend( /** @lends openerp.web.L
                     self.setup_resequence_rows(list, dataset);
                     if (!self.options.editable) self.post_render_expandable(list, dataset);
                     if (post_render) { post_render(); }
+                    if (list.$_element) {
+                        list.$_element.remove();
+                        list.$_element = null;
+                    }
                 });
             });
         return $element;
@@ -2422,5 +2401,4 @@ openerp.web.list = {
     Record: Record,
     Collection: Collection
 }
-};
 // vim:et fdc=0 fdl=0 foldnestmax=3 fdm=syntax:
